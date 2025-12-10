@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".PlayerActivity">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/player_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:show_buffering="always"
+        app:use_artwork="true"
+        app:use_controller="true" />
+
+    <ImageButton
+        android:id="@+id/exo_delete_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="16dp"
+        android:background="@drawable/exo_rounded_rectangle"
+        android:contentDescription="@string/delete_button_content_description"
+        android:src="@android:drawable/ic_menu_delete"
+        android:tint="@android:color/white"
+        android:visibility="visible" />
+
+</FrameLayout>
