@@ -17,8 +17,8 @@ apply plugin: 'com.android.application'
 
 android {
     namespace 'androidx.media3.demo.filebrowser'
+    compileSdk 36
 
-    compileSdk project.ext.compileSdkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
