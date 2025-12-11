@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">文件浏览器</string>
+    <string name="tab_home">首页</string>
+    <string name="tab_more">更多</string>
+    <string name="filter_video">视频</string>
+    <string name="filter_audio">音乐</string>
+    <string name="filter_document">文档</string>
+    <string name="filter_all">全部</string>
+    <string name="sort_by_time">按时间排序</string>
+    <string name="sort_by_size">按大小排序</string>
+    <string name="delete">删除</string>
+    <string name="delete_confirm">确定要删除这个文件吗？</string>
+    <string name="storage_info">存储信息</string>
+    <string name="total_space">总空间</string>
+    <string name="used_space">已用空间</string>
+    <string name="free_space">可用空间</string>
+    <string name="internal_storage">内部存储</string>
+    <string name="external_storage">外部存储</string>
+    <string name="no_files">没有找到文件</string>
+    <string name="loading">加载中...</string>
+    <string name="permission_required">需要存储权限才能访问文件</string>
+</resources>
+
