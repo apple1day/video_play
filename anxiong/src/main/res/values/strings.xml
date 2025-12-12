@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">AnXiong MV Player</string>
-    <string name="loading_videos">加载视频中...</string>
-    <string name="no_videos_found">没有找到视频文件</string>
-    <string name="delete_button_content_description">删除当前视频</string>
-    <string name="video_deleted_success">视频删除成功</string>
-    <string name="video_deleted_failed">视频删除失败</string>
-</resources>
