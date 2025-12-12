@@ -19,6 +19,12 @@ android {
     namespace 'androidx.media3.demo.filebrowser'
     compileSdk 36
 
+    // 读取 keystore.properties 文件
+    def keystorePropertiesFile = rootProject.file("keystore.properties")
+    def keystoreProperties = new Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -33,6 +39,17 @@ android {
         targetSdkVersion project.ext.appTargetSdkVersion
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             shrinkResources true
@@ -40,7 +57,13 @@ android {
             proguardFiles = [
                 getDefaultProguardFile('proguard-android.txt')
             ]
-            signingConfig signingConfigs.debug
+            // 使用 release 签名配置（如果存在）
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                // 如果没有 keystore.properties，使用 debug 签名（仅用于开发）
+                signingConfig signingConfigs.debug
+            }
         }
         debug {
             jniDebuggable = true

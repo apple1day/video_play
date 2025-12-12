@@ -10,14 +10,13 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.Spinner;
+import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -31,13 +30,17 @@ public class HomeFragment extends Fragment {
 
     private RecyclerView recyclerView;
     private TextView emptyView;
-    private Spinner filterSpinner;
-    private Spinner sortSpinner;
+    private Button sortTimeButton;
+    private Button sortSizeButton;
+    private Button viewToggleButton;
     private FileAdapter adapter;
     private List<FileItem> allFiles = new ArrayList<>();
     private List<FileItem> allVideoFiles = new ArrayList<>(); // 存储所有视频文件
     private FileItem.FileType currentFilter = FileItem.FileType.VIDEO;
     private SortType currentSort = SortType.TIME;
+    private boolean timeSortDescending = true; // 默认从新到旧（降序）
+    private boolean sizeSortDescending = true; // 默认从大到小（降序）
+    private boolean isGridView = false; // 默认列表视图
 
     private enum SortType {
         TIME, SIZE
@@ -50,8 +53,9 @@ public class HomeFragment extends Fragment {
         
         recyclerView = view.findViewById(R.id.recycler_view);
         emptyView = view.findViewById(R.id.empty_view);
-        filterSpinner = view.findViewById(R.id.filter_spinner);
-        sortSpinner = view.findViewById(R.id.sort_spinner);
+        sortTimeButton = view.findViewById(R.id.sort_time_button);
+        sortSizeButton = view.findViewById(R.id.sort_size_button);
+        viewToggleButton = view.findViewById(R.id.view_toggle_button);
 
         adapter = new FileAdapter(new ArrayList<>(), fileItem -> {
             if (fileItem.getFileType() == FileItem.FileType.VIDEO) {
@@ -69,12 +73,9 @@ public class HomeFragment extends Fragment {
 
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         recyclerView.setAdapter(adapter);
-
-        // 在视图布局完成后设置 Spinner 大小
-        view.post(() -> setupSpinnerSize());
         
-        setupFilterSpinner();
-        setupSortSpinner();
+        setupSortButtons();
+        setupViewToggleButton();
 
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
             loadFiles();
@@ -83,131 +84,76 @@ public class HomeFragment extends Fragment {
         return view;
     }
 
-    private void setupSpinnerSize() {
-        // 获取屏幕宽度
-        DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
-        int screenWidth = displayMetrics.widthPixels;
-        
-        // 计算每个 Spinner 的宽度（屏幕宽度的10%）
-        int spinnerWidth = (int) (screenWidth * 0.2f);
-        
-        // 设置 Spinner 宽度
-        ViewGroup.LayoutParams filterParams = filterSpinner.getLayoutParams();
-        if (filterParams != null) {
-            filterParams.width = spinnerWidth;
-            filterSpinner.setLayoutParams(filterParams);
-        }
-        
-        ViewGroup.LayoutParams sortParams = sortSpinner.getLayoutParams();
-        if (sortParams != null) {
-            sortParams.width = spinnerWidth;
-            sortSpinner.setLayoutParams(sortParams);
-        }
-    }
 
-    private void setupFilterSpinner() {
-        DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
-        int screenWidth = displayMetrics.widthPixels;
-        float textSize = screenWidth * 0.025f;
-        
-        ArrayAdapter<CharSequence> filterAdapter = new ArrayAdapter<CharSequence>(
-            getContext(), android.R.layout.simple_spinner_item,
-            new String[]{
-                getString(R.string.filter_video),
-                getString(R.string.filter_audio),
-                getString(R.string.filter_document),
-                getString(R.string.filter_all)
-            }
-        ) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                TextView textView = (TextView) view;
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize);
-                return view;
-            }
+    private void setupSortButtons() {
+        // 设置时间排序按钮
+        updateSortTimeButtonIcon();
+        sortTimeButton.setOnClickListener(v -> {
+            currentSort = SortType.TIME;
+            timeSortDescending = !timeSortDescending;
+            updateSortTimeButtonIcon();
+            applyFilterAndSort();
+        });
 
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                View view = super.getDropDownView(position, convertView, parent);
-                TextView textView = (TextView) view;
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize);
-                return view;
-            }
-        };
-        filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        filterSpinner.setAdapter(filterAdapter);
-        filterSpinner.setSelection(0); // 默认视频
-
-        filterSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                switch (position) {
-                    case 0:
-                        currentFilter = FileItem.FileType.VIDEO;
-                        break;
-                    case 1:
-                        currentFilter = FileItem.FileType.AUDIO;
-                        break;
-                    case 2:
-                        currentFilter = FileItem.FileType.DOCUMENT;
-                        break;
-                    case 3:
-                        currentFilter = null; // 全部
-                        break;
-                }
-                applyFilterAndSort();
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
+        // 设置大小排序按钮
+        updateSortSizeButtonIcon();
+        sortSizeButton.setOnClickListener(v -> {
+            currentSort = SortType.SIZE;
+            sizeSortDescending = !sizeSortDescending;
+            updateSortSizeButtonIcon();
+            applyFilterAndSort();
         });
     }
 
-    private void setupSortSpinner() {
-        DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
-        int screenWidth = displayMetrics.widthPixels;
-        float textSize = screenWidth * 0.025f;
-        
-        ArrayAdapter<CharSequence> sortAdapter = new ArrayAdapter<CharSequence>(
-            getContext(), android.R.layout.simple_spinner_item,
-            new String[]{
-                getString(R.string.sort_by_time),
-                getString(R.string.sort_by_size)
-            }
-        ) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                TextView textView = (TextView) view;
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize);
-                return view;
-            }
+    private void updateSortTimeButtonIcon() {
+        int iconRes = timeSortDescending 
+            ? android.R.drawable.arrow_down_float 
+            : android.R.drawable.arrow_up_float;
+        sortTimeButton.setCompoundDrawablesWithIntrinsicBounds(0, 0, iconRes, 0);
+    }
 
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                View view = super.getDropDownView(position, convertView, parent);
-                TextView textView = (TextView) view;
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize);
-                return view;
-            }
-        };
-        sortAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        sortSpinner.setAdapter(sortAdapter);
-        sortSpinner.setSelection(0); // 默认按时间
+    private void updateSortSizeButtonIcon() {
+        int iconRes = sizeSortDescending 
+            ? android.R.drawable.arrow_down_float 
+            : android.R.drawable.arrow_up_float;
+        sortSizeButton.setCompoundDrawablesWithIntrinsicBounds(0, 0, iconRes, 0);
+    }
 
-        sortSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                currentSort = position == 0 ? SortType.TIME : SortType.SIZE;
-                applyFilterAndSort();
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
+    private void setupViewToggleButton() {
+        updateViewToggleButton();
+        viewToggleButton.setOnClickListener(v -> {
+            isGridView = !isGridView;
+            updateViewToggleButton();
+            switchLayoutManager();
         });
+    }
+
+    private void updateViewToggleButton() {
+        if (isGridView) {
+            // 当前是网格视图，点击后切换到列表视图，所以显示列表视图按钮
+            viewToggleButton.setText(getString(R.string.list_view));
+            // 使用列表图标（左边）
+            viewToggleButton.setCompoundDrawablesWithIntrinsicBounds(
+                android.R.drawable.ic_menu_sort_alphabetically, 0, 0, 0);
+        } else {
+            // 当前是列表视图，点击后切换到网格视图，所以显示网格视图按钮
+            viewToggleButton.setText(getString(R.string.grid_view));
+            // 使用网格图标（左边）
+            viewToggleButton.setCompoundDrawablesWithIntrinsicBounds(
+                android.R.drawable.ic_menu_view, 0, 0, 0);
+        }
+    }
+
+    private void switchLayoutManager() {
+        if (isGridView) {
+            // 切换到网格视图
+            GridLayoutManager gridLayoutManager = new GridLayoutManager(getContext(), 2);
+            recyclerView.setLayoutManager(gridLayoutManager);
+        } else {
+            // 切换到列表视图
+            LinearLayoutManager linearLayoutManager = new LinearLayoutManager(getContext());
+            recyclerView.setLayoutManager(linearLayoutManager);
+        }
     }
 
     public void refreshFiles() {
@@ -245,9 +191,17 @@ public class HomeFragment extends Fragment {
 
         Collections.sort(filtered, (o1, o2) -> {
             if (currentSort == SortType.TIME) {
-                return Long.compare(o2.getLastModified(), o1.getLastModified());
+                if (timeSortDescending) {
+                    return Long.compare(o2.getLastModified(), o1.getLastModified());
+                } else {
+                    return Long.compare(o1.getLastModified(), o2.getLastModified());
+                }
             } else {
-                return Long.compare(o2.getSize(), o1.getSize());
+                if (sizeSortDescending) {
+                    return Long.compare(o2.getSize(), o1.getSize());
+                } else {
+                    return Long.compare(o1.getSize(), o2.getSize());
+                }
             }
         });
 
