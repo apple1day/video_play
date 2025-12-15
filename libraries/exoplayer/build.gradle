@@ -18,7 +18,7 @@ apply from: "$gradle.ext.androidxMediaSettingsDir/common_library_config.gradle"
 apply plugin: 'kotlin-android'
 
 android {
-    namespace = 'androidx.media3.exoplayer'
+    namespace 'androidx.media3.exoplayer'
 
     buildTypes {
         debug {
@@ -26,10 +26,6 @@ android {
         }
     }
 
-    sourceSets {
-        androidTest.assets.srcDir '../test_data/src/test/assets'
-        test.assets.srcDir '../test_data/src/test/assets/'
-    }
 
     publishing {
         singleVariant('release') {
@@ -63,15 +59,10 @@ dependencies {
     androidTestImplementation 'androidx.test:runner:' + androidxTestRunnerVersion
     androidTestImplementation 'com.linkedin.dexmaker:dexmaker:' + dexmakerVersion
     androidTestImplementation 'com.linkedin.dexmaker:dexmaker-mockito:' + dexmakerVersion
-    androidTestImplementation(project(modulePrefix + 'test-utils')) {
-        exclude module: modulePrefix.substring(1) + 'library-core'
-    }
     androidTestImplementation 'com.squareup.okhttp3:mockwebserver:' + okhttpVersion
     testImplementation 'com.google.testparameterinjector:test-parameter-injector:' + testParameterInjectorVersion
     testImplementation 'com.squareup.okhttp3:mockwebserver:' + okhttpVersion
     testImplementation 'org.robolectric:robolectric:' + robolectricVersion
-    testImplementation project(modulePrefix + 'test-utils')
-    testImplementation project(modulePrefix + 'test-utils-robolectric')
 }
 
 ext {

@@ -88,4 +88,10 @@ libraries/decoder_iamf/src/main/jni/libiamf
 
 # MPEG-H decoder extension
 libraries/decoder_mpegh/src/main/jni/libmpegh
-/.vscode/settings.json
+anxiong
+.idea
+
+# Keystore files
+*.keystore
+*.jks
+keystore.properties

@@ -16,7 +16,7 @@ apply from: '../../constants.gradle'
 apply plugin: 'com.android.application'
 
 android {
-    namespace = 'androidx.media3.demo.filebrowser'
+    namespace 'androidx.media3.demo.filebrowser'
     compileSdk 36
 
     // 读取 keystore.properties 文件
@@ -27,16 +27,17 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-        coreLibraryDesugaringEnabled = true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
     }
 
     defaultConfig {
-        versionName project.ext.releaseVersion
-        versionCode project.ext.releaseVersionCode
-        minSdkVersion project.ext.minSdkVersion
-        targetSdkVersion project.ext.appTargetSdkVersion
+        applicationId 'com.storytellerstudio.knightstour'
+        versionName '2.4.5'
+        versionCode 296
+        minSdkVersion 25
+        targetSdkVersion 36
     }
 
     signingConfigs {
@@ -52,17 +53,17 @@ android {
 
     buildTypes {
         release {
-            shrinkResources = true
-            minifyEnabled = true
+            shrinkResources true
+            minifyEnabled true
             proguardFiles = [
                 getDefaultProguardFile('proguard-android.txt')
             ]
             // 使用 release 签名配置（如果存在）
             if (keystorePropertiesFile.exists()) {
-                signingConfig = signingConfigs.release
+                signingConfig signingConfigs.release
             } else {
                 // 如果没有 keystore.properties，使用 debug 签名（仅用于开发）
-                signingConfig = signingConfigs.debug
+                signingConfig signingConfigs.debug
             }
         }
         debug {
@@ -73,6 +74,7 @@ android {
     lintOptions {
         disable 'GoogleAppIndexingWarning', 'MissingTranslation'
     }
+    buildToolsVersion '35.0.0'
 }
 
 dependencies {
