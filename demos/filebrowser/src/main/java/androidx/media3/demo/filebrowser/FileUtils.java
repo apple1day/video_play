@@ -18,20 +18,24 @@ public class FileUtils {
     public static List<File> getStorageDirectories(Context context) {
         List<File> directories = new ArrayList<>();
         
-        // 内部存储
+        // 内部存储（应用数据目录的父目录，通常是 /data）
         File internalStorage = Environment.getDataDirectory();
         if (internalStorage != null && internalStorage.exists()) {
             directories.add(internalStorage);
         }
         
-        // 外部存储
+        // 外部存储（包括U盘等）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             directories.addAll(getStorageDirectoriesApi30(context));
         } else {
+            // Android 10 及以下
             File externalStorage = Environment.getExternalStorageDirectory();
             if (externalStorage != null && externalStorage.exists()) {
                 directories.add(externalStorage);
             }
+            
+            // 尝试获取其他存储卷（U盘等）
+            directories.addAll(getRemovableStorageDirectories(context));
         }
         
         return directories;
@@ -52,6 +56,53 @@ public class FileUtils {
                 }
             }
         }
+        return directories;
+    }
+    
+    /**
+     * 获取可移动存储设备（U盘等）的目录
+     * 适用于 Android 10 及以下版本
+     */
+    private static List<File> getRemovableStorageDirectories(Context context) {
+        List<File> directories = new ArrayList<>();
+        
+        // 常见的可移动存储路径
+        File storageDir = new File("/storage");
+        if (storageDir.exists() && storageDir.isDirectory()) {
+            File[] files = storageDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    // 排除内部存储和外部存储的标准路径
+                    String name = file.getName();
+                    if (!name.equals("emulated") && !name.equals("self") && file.isDirectory()) {
+                        // 检查是否是挂载的存储设备
+                        File[] subFiles = file.listFiles();
+                        if (subFiles != null && subFiles.length > 0) {
+                            directories.add(file);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 也检查 /mnt 目录（某些设备的挂载点）
+        File mntDir = new File("/mnt");
+        if (mntDir.exists() && mntDir.isDirectory()) {
+            File[] files = mntDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isDirectory() && file.canRead()) {
+                        // 检查是否是外部存储设备
+                        String path = file.getAbsolutePath();
+                        if (path.contains("sdcard") || path.contains("usb") || 
+                            path.contains("external")) {
+                            directories.add(file);
+                        }
+                    }
+                }
+            }
+        }
+        
         return directories;
     }
     

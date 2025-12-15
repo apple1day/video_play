@@ -76,11 +76,28 @@ public class FileBrowserAdapter extends RecyclerView.Adapter<FileBrowserAdapter.
             fileName.setText(item.getName());
             
             if (item.isDirectory()) {
-                // 使用备用图标，因为 ic_menu_folder 在新版本 Android 中可能不存在
-                icon.setImageResource(android.R.drawable.ic_dialog_info);
-                fileInfo.setText("文件夹");
+                // 使用文件夹图标
+                icon.setImageResource(android.R.drawable.ic_menu_view);
+                // 显示文件夹信息：修改时间
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+                fileInfo.setText("文件夹 • " + sdf.format(new Date(item.getLastModified())));
             } else {
-                icon.setImageResource(android.R.drawable.ic_menu_gallery);
+                // 根据文件类型显示不同图标
+                switch (item.getFileType()) {
+                    case VIDEO:
+                        icon.setImageResource(android.R.drawable.ic_media_play);
+                        break;
+                    case AUDIO:
+                        icon.setImageResource(android.R.drawable.ic_media_ff);
+                        break;
+                    case DOCUMENT:
+                        icon.setImageResource(android.R.drawable.ic_menu_edit);
+                        break;
+                    default:
+                        icon.setImageResource(android.R.drawable.ic_menu_gallery);
+                        break;
+                }
+                
                 StringBuilder info = new StringBuilder();
                 info.append(item.getFormattedSize());
                 info.append(" • ");

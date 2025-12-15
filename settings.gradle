@@ -30,7 +30,4 @@ gradle.ext.androidxMediaEnableMidiModule = true
 include modulePrefix + 'demo-filebrowser'
 project(modulePrefix + 'demo-filebrowser').projectDir = new File(rootDir, 'demos/filebrowser')
 
-// Modules that only contain tests (not utils used by other test modules)
-// Note: Some test modules are not available in this repository
-
 apply from: 'core_settings.gradle'
