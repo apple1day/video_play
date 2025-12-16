@@ -6,6 +6,8 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.widget.Button;
@@ -21,6 +23,8 @@ import androidx.media3.ui.PlayerView;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class PlayerActivity extends AppCompatActivity {
 
@@ -32,6 +36,8 @@ public class PlayerActivity extends AppCompatActivity {
     private ArrayList<String> fileList;
     private int currentIndex;
     private String currentFilePath;
+    private ExecutorService deleteExecutor;
+    private Handler mainHandler;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -56,6 +62,10 @@ public class PlayerActivity extends AppCompatActivity {
         initializePlayer();
 
         deleteButton.setOnClickListener(v -> deleteCurrentFile());
+        
+        // 初始化删除线程池和主线程Handler
+        deleteExecutor = Executors.newSingleThreadExecutor();
+        mainHandler = new Handler(Looper.getMainLooper());
     }
 
     private void initializePlayer() {
@@ -136,107 +146,144 @@ public class PlayerActivity extends AppCompatActivity {
         File file = new File(currentFilePath);
         String fileName = file.getName();
         
-        Log.d(TAG, "deleteCurrentFile: 开始删除文件 - " + currentFilePath);
-        Log.d(TAG, "deleteCurrentFile: 文件存在: " + file.exists());
-        Log.d(TAG, "deleteCurrentFile: 文件可读: " + file.canRead());
-        Log.d(TAG, "deleteCurrentFile: 文件可写: " + file.canWrite());
-        Log.d(TAG, "deleteCurrentFile: Android版本: " + Build.VERSION.SDK_INT);
+        Log.d(TAG, "deleteCurrentFile: 准备删除文件 - " + currentFilePath);
         
-        if (!file.exists()) {
-            Log.w(TAG, "deleteCurrentFile: 文件不存在 - " + currentFilePath);
-            Toast.makeText(this, "文件不存在: " + fileName, Toast.LENGTH_SHORT).show();
-            return;
-        }
+        // 保存要删除的文件路径
+        String fileToDelete = currentFilePath;
         
-        boolean deleted = false;
-        String errorMessage = null;
-        
-        // Android 10+ (API 29+) 需要使用 MediaStore API 删除媒体文件
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            deleted = deleteFileUsingMediaStore(file);
-            if (!deleted) {
-                errorMessage = "使用 MediaStore API 删除失败";
-                Log.e(TAG, "deleteCurrentFile: MediaStore 删除失败");
-                // 尝试使用传统方法作为备用
-                if (file.canWrite()) {
-                    deleted = file.delete();
-                    if (deleted) {
-                        Log.d(TAG, "deleteCurrentFile: 使用传统方法删除成功");
-                    } else {
-                        errorMessage = "文件删除失败（权限不足或文件被占用）";
-                        Log.e(TAG, "deleteCurrentFile: 传统方法删除也失败");
-                    }
-                } else {
-                    errorMessage = "文件不可写（权限不足）";
-                    Log.e(TAG, "deleteCurrentFile: 文件不可写");
-                }
-            }
-        } else {
-            // Android 9 及以下使用传统方法
-            if (file.canWrite()) {
-                deleted = file.delete();
-                if (!deleted) {
-                    errorMessage = "文件删除失败（可能被占用）";
-                    Log.e(TAG, "deleteCurrentFile: 文件删除失败");
-                }
-            } else {
-                errorMessage = "文件不可写（权限不足）";
-                Log.e(TAG, "deleteCurrentFile: 文件不可写");
-            }
-        }
-        
-        if (deleted) {
-            Log.d(TAG, "deleteCurrentFile: 删除成功 - " + fileName);
-            Toast.makeText(this, "已删除: " + fileName, Toast.LENGTH_SHORT).show();
-            
-            // 从列表中移除当前文件
+        // 先切换到下一个视频或关闭播放器
+        if (player != null && fileList != null && !fileList.isEmpty()) {
+            // 从列表中移除当前文件（但先不删除实际文件）
             int deletedIndex = currentIndex;
             fileList.remove(deletedIndex);
             
-            // 如果删除后列表为空，关闭播放器
+            // 检查是否有下一个视频
             if (fileList.isEmpty()) {
+                // 列表为空，关闭播放器
                 Log.d(TAG, "deleteCurrentFile: 列表为空，关闭播放器");
                 finish();
-                return;
-            }
-            
-            // 调整当前索引
-            if (currentIndex >= fileList.size()) {
-                currentIndex = fileList.size() - 1;
-            }
-            
-            // 重新构建播放列表
-            List<MediaItem> mediaItems = new ArrayList<>();
-            for (String filePath : fileList) {
-                File f = new File(filePath);
-                if (f.exists()) {
-                    mediaItems.add(MediaItem.fromUri(Uri.fromFile(f)));
+            } else {
+                // 调整当前索引 - 如果删除的是最后一个，索引需要减1
+                if (currentIndex >= fileList.size()) {
+                    currentIndex = fileList.size() - 1;
                 }
-            }
-            
-            if (mediaItems.isEmpty()) {
-                Log.d(TAG, "deleteCurrentFile: 没有可播放的文件，关闭播放器");
-                finish();
-                return;
-            }
-            
-            // 更新播放列表，从当前索引开始播放
-            if (player != null) {
-                player.setMediaItems(mediaItems, currentIndex, 0);
-                player.prepare();
-                player.play();
                 
-                // 更新当前文件路径
-                if (currentIndex < fileList.size()) {
+                // 重新构建播放列表
+                List<MediaItem> mediaItems = new ArrayList<>();
+                for (String filePath : fileList) {
+                    File f = new File(filePath);
+                    if (f.exists()) {
+                        mediaItems.add(MediaItem.fromUri(Uri.fromFile(f)));
+                    }
+                }
+                
+                if (mediaItems.isEmpty()) {
+                    Log.d(TAG, "deleteCurrentFile: 没有可播放的文件，关闭播放器");
+                    finish();
+                } else {
+                    // 更新播放列表，从当前索引开始播放
+                    int playIndex = Math.min(currentIndex, mediaItems.size() - 1);
+                    playIndex = Math.max(0, playIndex);
+                    
+                    currentIndex = playIndex;
                     currentFilePath = fileList.get(currentIndex);
-                    Log.d(TAG, "deleteCurrentFile: 更新当前文件路径 - " + currentFilePath);
+                    
+                    player.setMediaItems(mediaItems, playIndex, 0);
+                    player.prepare();
+                    player.play();
+                    
+                    Log.d(TAG, "deleteCurrentFile: 切换到下一个视频 - " + currentFilePath + ", 索引: " + currentIndex);
                 }
             }
         } else {
-            Log.e(TAG, "deleteCurrentFile: 删除失败 - " + fileName + ", 错误: " + errorMessage);
-            Toast.makeText(this, "删除失败: " + fileName + "\n" + (errorMessage != null ? errorMessage : "未知错误"), 
-                Toast.LENGTH_LONG).show();
+            // 播放器为空或列表为空，直接关闭
+            finish();
         }
+        
+        // 异步删除文件
+        deleteFileAsync(fileToDelete, fileName);
+    }
+    
+    /**
+     * 异步删除文件
+     */
+    private void deleteFileAsync(String filePath, String fileName) {
+        deleteExecutor.execute(() -> {
+            File file = new File(filePath);
+            
+            if (!file.exists()) {
+                Log.w(TAG, "deleteFileAsync: 文件不存在 - " + filePath);
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "文件不存在: " + fileName, Toast.LENGTH_SHORT).show();
+                });
+                return;
+            }
+            
+            Log.d(TAG, "deleteFileAsync: 开始异步删除文件 - " + filePath);
+            
+            // 等待一小段时间确保文件资源被释放
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Log.w(TAG, "deleteFileAsync: 等待被中断", e);
+            }
+            
+            boolean deleted = false;
+            String errorMessage = null;
+            
+            // Android 10+ (API 29+) 需要使用 MediaStore API 删除媒体文件
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                deleted = deleteFileUsingMediaStore(file);
+                if (!deleted) {
+                    errorMessage = "使用 MediaStore API 删除失败";
+                    Log.e(TAG, "deleteFileAsync: MediaStore 删除失败，尝试直接删除");
+                    // 即使 canWrite() 返回 false，也尝试直接删除
+                    boolean directDeleted = file.delete();
+                    if (directDeleted) {
+                        Log.d(TAG, "deleteFileAsync: 直接删除成功");
+                        deleted = true;
+                        errorMessage = null;
+                    } else {
+                        // 检查文件是否还存在
+                        if (!file.exists()) {
+                            Log.d(TAG, "deleteFileAsync: 文件已不存在（可能已被删除）");
+                            deleted = true;
+                            errorMessage = null;
+                        } else {
+                            errorMessage = "文件删除失败（权限不足或文件被占用）";
+                            Log.e(TAG, "deleteFileAsync: 直接删除也失败，文件仍存在");
+                        }
+                    }
+                }
+            } else {
+                // Android 9 及以下使用传统方法
+                if (file.canWrite()) {
+                    deleted = file.delete();
+                    if (!deleted) {
+                        errorMessage = "文件删除失败（可能被占用）";
+                        Log.e(TAG, "deleteFileAsync: 文件删除失败");
+                    }
+                } else {
+                    errorMessage = "文件不可写（权限不足）";
+                    Log.e(TAG, "deleteFileAsync: 文件不可写");
+                }
+            }
+            
+            // 在主线程显示结果
+            final boolean finalDeleted = deleted;
+            final String finalErrorMessage = errorMessage;
+            mainHandler.post(() -> {
+                if (finalDeleted) {
+                    Log.d(TAG, "deleteFileAsync: 删除成功 - " + fileName);
+                    Toast.makeText(this, "已删除: " + fileName, Toast.LENGTH_SHORT).show();
+                } else {
+                    Log.e(TAG, "deleteFileAsync: 删除失败 - " + fileName + ", 错误: " + finalErrorMessage);
+                    Toast.makeText(this, "删除失败: " + fileName + "\n" + 
+                        (finalErrorMessage != null ? finalErrorMessage : "未知错误"), 
+                        Toast.LENGTH_LONG).show();
+                }
+            });
+        });
     }
     
     /**
@@ -254,13 +301,100 @@ public class PlayerActivity extends AppCompatActivity {
             if (uri != null) {
                 int deleted = resolver.delete(uri, null, null);
                 Log.d(TAG, "deleteFileUsingMediaStore: MediaStore 删除结果 - " + deleted);
+                
+                // 检查文件是否真的被删除了
+                if (deleted > 0) {
+                    // 等待一下让系统完成删除操作
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException e) {
+                        Log.w(TAG, "deleteFileUsingMediaStore: 等待被中断", e);
+                    }
+                    
+                    // 如果文件仍然存在，尝试直接删除
+                    if (file.exists()) {
+                        Log.w(TAG, "deleteFileUsingMediaStore: MediaStore删除后文件仍存在，尝试直接删除");
+                        // 即使 canWrite() 返回 false，也尝试直接删除
+                        boolean directDeleted = file.delete();
+                        if (directDeleted) {
+                            Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功");
+                            return true;
+                        } else {
+                            // 再次检查文件是否存在
+                            if (!file.exists()) {
+                                Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（可能已被删除）");
+                                return true;
+                            }
+                            Log.w(TAG, "deleteFileUsingMediaStore: 直接删除也失败");
+                        }
+                    } else {
+                        Log.d(TAG, "deleteFileUsingMediaStore: 文件已成功删除");
+                        return true;
+                    }
+                }
+                
+                // 如果MediaStore删除失败，尝试直接删除文件（即使 canWrite() 返回 false）
+                if (deleted == 0) {
+                    Log.w(TAG, "deleteFileUsingMediaStore: MediaStore删除返回0，尝试直接删除");
+                    boolean directDeleted = file.delete();
+                    if (directDeleted) {
+                        Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功");
+                        return true;
+                    } else {
+                        // 检查文件是否还存在
+                        if (!file.exists()) {
+                            Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（可能已被删除）");
+                            return true;
+                        }
+                    }
+                }
+                
                 return deleted > 0;
             } else {
-                Log.w(TAG, "deleteFileUsingMediaStore: 无法获取 MediaStore URI");
+                Log.w(TAG, "deleteFileUsingMediaStore: 无法获取 MediaStore URI，尝试直接删除");
+                // 如果无法获取URI，尝试直接删除（即使 canWrite() 返回 false）
+                boolean directDeleted = file.delete();
+                if (directDeleted) {
+                    Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功");
+                    return true;
+                } else {
+                    // 检查文件是否还存在
+                    if (!file.exists()) {
+                        Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（可能已被删除）");
+                        return true;
+                    }
+                }
                 return false;
             }
+        } catch (SecurityException e) {
+            Log.e(TAG, "deleteFileUsingMediaStore: 权限异常", e);
+            // 权限不足时，尝试直接删除（即使 canWrite() 返回 false）
+            boolean directDeleted = file.delete();
+            if (directDeleted) {
+                Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功（权限异常后）");
+                return true;
+            } else {
+                // 检查文件是否还存在
+                if (!file.exists()) {
+                    Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（权限异常后）");
+                    return true;
+                }
+            }
+            return false;
         } catch (Exception e) {
             Log.e(TAG, "deleteFileUsingMediaStore: 删除异常", e);
+            // 异常时，尝试直接删除（即使 canWrite() 返回 false）
+            boolean directDeleted = file.delete();
+            if (directDeleted) {
+                Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功（异常后）");
+                return true;
+            } else {
+                // 检查文件是否还存在
+                if (!file.exists()) {
+                    Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（异常后）");
+                    return true;
+                }
+            }
             return false;
         }
     }
@@ -277,26 +411,69 @@ public class PlayerActivity extends AppCompatActivity {
             ContentResolver resolver = getContentResolver();
             String filePath = file.getAbsolutePath();
             String fileName = file.getName();
+            long fileSize = file.length();
+            
+            Log.d(TAG, "getMediaStoreUri: 开始查询 - 文件路径: " + filePath);
+            Log.d(TAG, "getMediaStoreUri: 文件名: " + fileName + ", 大小: " + fileSize);
             
             // 尝试查找视频文件
-            String[] projection = {MediaStore.Video.Media._ID};
-            String selection = MediaStore.Video.Media.DATA + "=?";
-            String[] selectionArgs = {filePath};
+            // 在Android 10+中，DATA字段可能不可用，使用文件名和大小来匹配
+            String[] projection = {MediaStore.Video.Media._ID, MediaStore.Video.Media.DATA, 
+                MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.SIZE};
+            String selection = null;
+            String[] selectionArgs = null;
             
-            Cursor cursor = resolver.query(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
-                null
-            );
+            // 优先尝试使用DATA字段（如果可用）
+            Cursor cursor = null;
+            try {
+                selection = MediaStore.Video.Media.DATA + "=?";
+                selectionArgs = new String[]{filePath};
+                Log.d(TAG, "getMediaStoreUri: 尝试使用DATA字段查询视频文件");
+                cursor = resolver.query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                );
+                if (cursor != null) {
+                    Log.d(TAG, "getMediaStoreUri: DATA字段查询结果数量 - " + cursor.getCount());
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "getMediaStoreUri: 使用DATA字段查询失败，尝试使用文件名", e);
+            }
+            
+            // 如果使用DATA字段没找到，尝试使用文件名和大小
+            if ((cursor == null || cursor.getCount() == 0) && fileSize > 0) {
+                if (cursor != null) {
+                    cursor.close();
+                }
+                try {
+                    selection = MediaStore.Video.Media.DISPLAY_NAME + "=? AND " + 
+                               MediaStore.Video.Media.SIZE + "=?";
+                    selectionArgs = new String[]{fileName, String.valueOf(fileSize)};
+                    Log.d(TAG, "getMediaStoreUri: 尝试使用文件名和大小查询视频文件");
+                    cursor = resolver.query(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        projection,
+                        selection,
+                        selectionArgs,
+                        null
+                );
+                    if (cursor != null) {
+                        Log.d(TAG, "getMediaStoreUri: 文件名和大小查询结果数量 - " + cursor.getCount());
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "getMediaStoreUri: 使用文件名和大小查询失败", e);
+                }
+            }
             
             if (cursor != null && cursor.moveToFirst()) {
                 int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID);
                 long id = cursor.getLong(idColumn);
                 cursor.close();
                 Uri uri = Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-                Log.d(TAG, "getMediaStoreUri: 找到视频 URI - " + uri);
+                Log.d(TAG, "getMediaStoreUri: 找到视频 URI - " + uri + ", ID: " + id);
                 return uri;
             }
             
@@ -304,21 +481,57 @@ public class PlayerActivity extends AppCompatActivity {
                 cursor.close();
             }
             
+            Log.w(TAG, "getMediaStoreUri: 未找到视频文件，尝试查询音频文件");
+            
             // 如果没找到，尝试音频文件
-            cursor = resolver.query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
-                null
-            );
+            try {
+                selection = MediaStore.Audio.Media.DATA + "=?";
+                selectionArgs = new String[]{filePath};
+                Log.d(TAG, "getMediaStoreUri: 尝试使用DATA字段查询音频文件");
+                cursor = resolver.query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                );
+                if (cursor != null) {
+                    Log.d(TAG, "getMediaStoreUri: 音频DATA字段查询结果数量 - " + cursor.getCount());
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "getMediaStoreUri: 音频DATA字段查询失败，尝试使用文件名", e);
+            }
+            
+            if ((cursor == null || cursor.getCount() == 0) && fileSize > 0) {
+                if (cursor != null) {
+                    cursor.close();
+                }
+                try {
+                    selection = MediaStore.Audio.Media.DISPLAY_NAME + "=? AND " + 
+                               MediaStore.Audio.Media.SIZE + "=?";
+                    selectionArgs = new String[]{fileName, String.valueOf(fileSize)};
+                    Log.d(TAG, "getMediaStoreUri: 尝试使用文件名和大小查询音频文件");
+                    cursor = resolver.query(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        projection,
+                        selection,
+                        selectionArgs,
+                        null
+                    );
+                    if (cursor != null) {
+                        Log.d(TAG, "getMediaStoreUri: 音频文件名和大小查询结果数量 - " + cursor.getCount());
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "getMediaStoreUri: 音频文件名和大小查询失败", e);
+                }
+            }
             
             if (cursor != null && cursor.moveToFirst()) {
                 int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
                 long id = cursor.getLong(idColumn);
                 cursor.close();
                 Uri uri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-                Log.d(TAG, "getMediaStoreUri: 找到音频 URI - " + uri);
+                Log.d(TAG, "getMediaStoreUri: 找到音频 URI - " + uri + ", ID: " + id);
                 return uri;
             }
             
@@ -327,6 +540,7 @@ public class PlayerActivity extends AppCompatActivity {
             }
             
             Log.w(TAG, "getMediaStoreUri: 未找到 MediaStore URI - " + filePath);
+            Log.w(TAG, "getMediaStoreUri: 文件可能不在 MediaStore 数据库中，将尝试直接删除");
             return null;
         } catch (Exception e) {
             Log.e(TAG, "getMediaStoreUri: 获取 URI 异常", e);
@@ -426,6 +640,9 @@ public class PlayerActivity extends AppCompatActivity {
         if (player != null) {
             player.release();
             player = null;
+        }
+        if (deleteExecutor != null) {
+            deleteExecutor.shutdown();
         }
     }
 }

@@ -1,17 +1,24 @@
 package androidx.media3.demo.filebrowser;
 
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,14 +32,24 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class HomeFragment extends Fragment {
 
+    private static final String TAG = "HomeFragment";
+    
     private RecyclerView recyclerView;
     private TextView emptyView;
     private Button sortTimeButton;
     private Button sortSizeButton;
     private Button viewToggleButton;
+    private View toolbarLayout;
+    private View selectionToolbarLayout;
+    private Button selectAllButton;
+    private Button deleteSelectedButton;
+    private Button cancelSelectionButton;
+    private TextView selectedCountText;
     private FileAdapter adapter;
     private List<FileItem> allFiles = new ArrayList<>();
     private List<FileItem> allVideoFiles = new ArrayList<>(); // 存储所有视频文件
@@ -41,6 +58,8 @@ public class HomeFragment extends Fragment {
     private boolean timeSortDescending = true; // 默认从新到旧（降序）
     private boolean sizeSortDescending = true; // 默认从大到小（降序）
     private boolean isGridView = false; // 默认列表视图
+    private ExecutorService deleteExecutor;
+    private Handler mainHandler;
 
     private enum SortType {
         TIME, SIZE
@@ -56,9 +75,15 @@ public class HomeFragment extends Fragment {
         sortTimeButton = view.findViewById(R.id.sort_time_button);
         sortSizeButton = view.findViewById(R.id.sort_size_button);
         viewToggleButton = view.findViewById(R.id.view_toggle_button);
+        toolbarLayout = view.findViewById(R.id.toolbar_layout);
+        selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
+        selectAllButton = view.findViewById(R.id.select_all_button);
+        deleteSelectedButton = view.findViewById(R.id.delete_selected_button);
+        cancelSelectionButton = view.findViewById(R.id.cancel_selection_button);
+        selectedCountText = view.findViewById(R.id.selected_count_text);
 
         adapter = new FileAdapter(new ArrayList<>(), fileItem -> {
-            if (fileItem.getFileType() == FileItem.FileType.VIDEO) {
+            if (!adapter.isSelectionMode() && fileItem.getFileType() == FileItem.FileType.VIDEO) {
                 Intent intent = new Intent(getContext(), PlayerActivity.class);
                 String currentPath = fileItem.getFile().getAbsolutePath();
                 intent.putExtra("file_path", currentPath);
@@ -70,18 +95,60 @@ public class HomeFragment extends Fragment {
                 startActivity(intent);
             }
         });
+        
+        // 监听选择状态变化
+        adapter.setSelectionChangeListener(count -> {
+            updateSelectionUI();
+        });
 
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         recyclerView.setAdapter(adapter);
         
         setupSortButtons();
         setupViewToggleButton();
+        setupSelectionButtons();
+        
+        // 初始化删除线程池和主线程Handler
+        deleteExecutor = Executors.newSingleThreadExecutor();
+        mainHandler = new Handler(Looper.getMainLooper());
 
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
             loadFiles();
         }
 
         return view;
+    }
+    
+    private void setupSelectionButtons() {
+        selectAllButton.setOnClickListener(v -> {
+            adapter.selectAll();
+            updateSelectionUI();
+        });
+        
+        deleteSelectedButton.setOnClickListener(v -> {
+            List<FileItem> selectedItems = adapter.getSelectedItems();
+            if (!selectedItems.isEmpty()) {
+                deleteSelectedFiles(selectedItems);
+            }
+        });
+        
+        cancelSelectionButton.setOnClickListener(v -> {
+            adapter.setSelectionMode(false);
+            updateSelectionUI();
+        });
+    }
+    
+    private void updateSelectionUI() {
+        if (adapter.isSelectionMode()) {
+            toolbarLayout.setVisibility(View.GONE);
+            selectionToolbarLayout.setVisibility(View.VISIBLE);
+            int count = adapter.getSelectedCount();
+            selectedCountText.setText(getString(R.string.selected_count, count));
+            deleteSelectedButton.setEnabled(count > 0);
+        } else {
+            toolbarLayout.setVisibility(View.VISIBLE);
+            selectionToolbarLayout.setVisibility(View.GONE);
+        }
     }
 
 
@@ -238,6 +305,197 @@ public class HomeFragment extends Fragment {
             }
         }
         return 0; // 如果找不到，返回 0
+    }
+    
+    /**
+     * 删除选中的文件
+     */
+    private void deleteSelectedFiles(List<FileItem> selectedItems) {
+        if (selectedItems.isEmpty()) {
+            return;
+        }
+        
+        // 退出多选模式
+        adapter.setSelectionMode(false);
+        updateSelectionUI();
+        
+        // 异步删除文件
+        deleteExecutor.execute(() -> {
+            int successCount = 0;
+            int failCount = 0;
+            
+            for (FileItem item : selectedItems) {
+                File file = item.getFile();
+                if (!file.exists()) {
+                    continue;
+                }
+                
+                boolean deleted = false;
+                
+                // Android 10+ 使用 MediaStore API
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    deleted = deleteFileUsingMediaStore(file);
+                    if (!deleted) {
+                        // 尝试直接删除
+                        deleted = file.delete();
+                        if (!deleted && !file.exists()) {
+                            deleted = true; // 文件已不存在
+                        }
+                    }
+                } else {
+                    // Android 9 及以下
+                    if (file.canWrite()) {
+                        deleted = file.delete();
+                    }
+                }
+                
+                if (deleted) {
+                    successCount++;
+                    Log.d(TAG, "deleteSelectedFiles: 删除成功 - " + file.getName());
+                } else {
+                    failCount++;
+                    Log.e(TAG, "deleteSelectedFiles: 删除失败 - " + file.getName());
+                }
+            }
+            
+            // 在主线程更新UI和显示结果
+            final int finalSuccessCount = successCount;
+            final int finalFailCount = failCount;
+            mainHandler.post(() -> {
+                // 重新加载文件列表
+                loadFiles();
+                
+                // 显示删除结果
+                if (finalFailCount == 0) {
+                    Toast.makeText(getContext(), 
+                        getString(R.string.delete_success) + " (" + finalSuccessCount + ")", 
+                        Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(getContext(), 
+                        getString(R.string.delete_success) + ": " + finalSuccessCount + 
+                        ", " + getString(R.string.delete_failed) + ": " + finalFailCount, 
+                        Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+    }
+    
+    /**
+     * 使用 MediaStore API 删除文件（Android 10+）
+     */
+    private boolean deleteFileUsingMediaStore(File file) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return false;
+        }
+        
+        try {
+            ContentResolver resolver = getContext().getContentResolver();
+            Uri uri = getMediaStoreUri(file);
+            
+            if (uri != null) {
+                int deleted = resolver.delete(uri, null, null);
+                if (deleted > 0) {
+                    // 等待一下让系统完成删除操作
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException e) {
+                        // 忽略
+                    }
+                    
+                    // 检查文件是否真的被删除了
+                    if (!file.exists()) {
+                        return true;
+                    }
+                    
+                    // 如果文件仍然存在，尝试直接删除
+                    return file.delete();
+                }
+                
+                // MediaStore删除返回0，尝试直接删除
+                return file.delete();
+            } else {
+                // 无法获取URI，尝试直接删除
+                return file.delete();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "deleteFileUsingMediaStore: 删除异常", e);
+            return file.delete();
+        }
+    }
+    
+    /**
+     * 获取文件的 MediaStore URI
+     */
+    private Uri getMediaStoreUri(File file) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return null;
+        }
+        
+        try {
+            ContentResolver resolver = getContext().getContentResolver();
+            String filePath = file.getAbsolutePath();
+            
+            // 尝试查找视频文件
+            String[] projection = {MediaStore.Video.Media._ID};
+            String selection = MediaStore.Video.Media.DATA + "=?";
+            String[] selectionArgs = {filePath};
+            
+            Cursor cursor = resolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            );
+            
+            if (cursor != null && cursor.moveToFirst()) {
+                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID);
+                long id = cursor.getLong(idColumn);
+                cursor.close();
+                return Uri.withAppendedPath(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI, 
+                    String.valueOf(id));
+            }
+            
+            if (cursor != null) {
+                cursor.close();
+            }
+            
+            // 如果没找到，尝试音频文件
+            cursor = resolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            );
+            
+            if (cursor != null && cursor.moveToFirst()) {
+                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+                long id = cursor.getLong(idColumn);
+                cursor.close();
+                return Uri.withAppendedPath(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, 
+                    String.valueOf(id));
+            }
+            
+            if (cursor != null) {
+                cursor.close();
+            }
+            
+            return null;
+        } catch (Exception e) {
+            Log.e(TAG, "getMediaStoreUri: 获取 URI 异常", e);
+            return null;
+        }
+    }
+    
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (deleteExecutor != null) {
+            deleteExecutor.shutdown();
+        }
     }
 }
 

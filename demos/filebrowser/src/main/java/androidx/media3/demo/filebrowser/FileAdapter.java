@@ -3,6 +3,7 @@ package androidx.media3.demo.filebrowser;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -12,16 +13,29 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
 
     private List<FileItem> files = new ArrayList<>();
     private OnItemClickListener listener;
+    private OnSelectionChangeListener selectionChangeListener;
+    private boolean isSelectionMode = false;
+    private Set<Integer> selectedPositions = new HashSet<>();
 
     public interface OnItemClickListener {
         void onItemClick(FileItem item);
+    }
+    
+    public interface OnSelectionChangeListener {
+        void onSelectionChanged(int selectedCount);
+    }
+    
+    public void setSelectionChangeListener(OnSelectionChangeListener listener) {
+        this.selectionChangeListener = listener;
     }
 
     public FileAdapter(List<FileItem> files, OnItemClickListener listener) {
@@ -31,11 +45,78 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
 
     public void updateFiles(List<FileItem> newFiles) {
         this.files = newFiles;
+        selectedPositions.clear();
         notifyDataSetChanged();
     }
 
     public List<FileItem> getFiles() {
         return files;
+    }
+    
+    public void setSelectionMode(boolean enabled) {
+        if (isSelectionMode != enabled) {
+            isSelectionMode = enabled;
+            if (!enabled) {
+                selectedPositions.clear();
+            }
+            notifyDataSetChanged();
+            if (selectionChangeListener != null) {
+                selectionChangeListener.onSelectionChanged(selectedPositions.size());
+            }
+        }
+    }
+    
+    public boolean isSelectionMode() {
+        return isSelectionMode;
+    }
+    
+    public void toggleSelection(int position) {
+        if (selectedPositions.contains(position)) {
+            selectedPositions.remove(position);
+        } else {
+            selectedPositions.add(position);
+        }
+        notifyItemChanged(position);
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(selectedPositions.size());
+        }
+    }
+    
+    public void selectAll() {
+        selectedPositions.clear();
+        for (int i = 0; i < files.size(); i++) {
+            selectedPositions.add(i);
+        }
+        notifyDataSetChanged();
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(selectedPositions.size());
+        }
+    }
+    
+    public void clearSelection() {
+        selectedPositions.clear();
+        notifyDataSetChanged();
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(0);
+        }
+    }
+    
+    public List<FileItem> getSelectedItems() {
+        List<FileItem> selected = new ArrayList<>();
+        for (Integer position : selectedPositions) {
+            if (position >= 0 && position < files.size()) {
+                selected.add(files.get(position));
+            }
+        }
+        return selected;
+    }
+    
+    public int getSelectedCount() {
+        return selectedPositions.size();
+    }
+    
+    public boolean isSelected(int position) {
+        return selectedPositions.contains(position);
     }
 
     @NonNull
@@ -49,7 +130,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         FileItem item = files.get(position);
-        holder.bind(item);
+        holder.bind(item, position);
     }
 
     @Override
@@ -61,22 +142,43 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         private ImageView icon;
         private TextView fileName;
         private TextView fileInfo;
+        private CheckBox checkBox;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
             icon = itemView.findViewById(R.id.icon);
             fileName = itemView.findViewById(R.id.file_name);
             fileInfo = itemView.findViewById(R.id.file_info);
+            checkBox = itemView.findViewById(R.id.checkbox);
 
             itemView.setOnClickListener(v -> {
                 int position = getAdapterPosition();
-                if (position != RecyclerView.NO_POSITION && listener != null) {
-                    listener.onItemClick(files.get(position));
+                if (position != RecyclerView.NO_POSITION) {
+                    if (isSelectionMode) {
+                        // 多选模式下，切换选中状态
+                        toggleSelection(position);
+                    } else {
+                        // 普通模式下，点击打开文件
+                        if (listener != null) {
+                            listener.onItemClick(files.get(position));
+                        }
+                    }
                 }
+            });
+            
+            itemView.setOnLongClickListener(v -> {
+                int position = getAdapterPosition();
+                if (position != RecyclerView.NO_POSITION && !isSelectionMode) {
+                    // 长按进入多选模式
+                    setSelectionMode(true);
+                    toggleSelection(position);
+                    return true;
+                }
+                return false;
             });
         }
 
-        public void bind(FileItem item) {
+        public void bind(FileItem item, int position) {
             fileName.setText(item.getName());
             
             // 设置图标
@@ -111,6 +213,16 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
             info.append(sdf.format(new Date(item.getLastModified())));
             fileInfo.setText(info.toString());
+            
+            // 设置多选模式
+            if (checkBox != null) {
+                if (isSelectionMode) {
+                    checkBox.setVisibility(View.VISIBLE);
+                    checkBox.setChecked(selectedPositions.contains(position));
+                } else {
+                    checkBox.setVisibility(View.GONE);
+                }
+            }
         }
     }
 }
