@@ -319,6 +319,15 @@ public class HomeFragment extends Fragment {
         adapter.setSelectionMode(false);
         updateSelectionUI();
         
+        // 检查executor是否有效
+        if (deleteExecutor == null || deleteExecutor.isShutdown() || deleteExecutor.isTerminated()) {
+            Log.e("HomeFragment", "deleteSelectedFiles: 删除线程池无效或已关闭");
+            mainHandler.post(() -> {
+                Toast.makeText(getContext(), "删除服务不可用", Toast.LENGTH_SHORT).show();
+            });
+            return;
+        }
+        
         // 异步删除文件
         deleteExecutor.execute(() -> {
             int successCount = 0;
@@ -499,3 +508,4 @@ public class HomeFragment extends Fragment {
     }
 }
 
+
