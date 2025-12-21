@@ -26,8 +26,8 @@ gradle.ext.androidxMediaEnableMidiModule = true
 // All library modules should be configured in core_settings.gradle. Below are
 // modules that no app should depend on.
 
-// Demo apps - only include filebrowser
-include modulePrefix + 'demo-filebrowser'
-project(modulePrefix + 'demo-filebrowser').projectDir = new File(rootDir, 'demos/filebrowser')
+// Demo apps - only include media
+include modulePrefix + 'demo-media'
+project(modulePrefix + 'demo-media').projectDir = new File(rootDir, 'media')
 
 apply from: 'core_settings.gradle'
