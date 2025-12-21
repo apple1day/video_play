@@ -48,6 +48,7 @@ public class HomeFragment extends Fragment {
     private View selectionToolbarLayout;
     private Button selectAllButton;
     private Button selectFavoritesButton;
+    private Button selectPendingDeletesButton;
     private Button deleteSelectedButton;
     private Button cancelSelectionButton;
     private TextView selectedCountText;
@@ -61,6 +62,7 @@ public class HomeFragment extends Fragment {
     private boolean isGridView = false; // 默认列表视图
     private ExecutorService deleteExecutor;
     private Handler mainHandler;
+    private PendingDeleteManager pendingDeleteManager;
 
     private enum SortType {
         TIME, SIZE
@@ -80,6 +82,7 @@ public class HomeFragment extends Fragment {
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
         selectAllButton = view.findViewById(R.id.select_all_button);
         selectFavoritesButton = view.findViewById(R.id.select_favorites_button);
+        selectPendingDeletesButton = view.findViewById(R.id.select_pending_deletes_button);
         deleteSelectedButton = view.findViewById(R.id.delete_selected_button);
         cancelSelectionButton = view.findViewById(R.id.cancel_selection_button);
         selectedCountText = view.findViewById(R.id.selected_count_text);
@@ -116,12 +119,42 @@ public class HomeFragment extends Fragment {
         // 初始化删除线程池和主线程Handler
         deleteExecutor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
+        
+        // 初始化待删除管理器并设置监听器
+        pendingDeleteManager = PendingDeleteManager.getInstance(getContext());
+        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+            @Override
+            public void onFileDeleted(String filePath) {
+                // 单个文件删除后刷新列表
+                Log.d(TAG, "onFileDeleted: " + filePath);
+                refreshFiles();
+            }
+            
+            @Override
+            public void onFilesDeleted(int count) {
+                // 批量删除后刷新列表
+                Log.d(TAG, "onFilesDeleted: " + count);
+                refreshFiles();
+                Toast.makeText(getContext(), 
+                    getString(R.string.delete_success) + " (" + count + ")", 
+                    Toast.LENGTH_SHORT).show();
+            }
+        });
 
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
             loadFiles();
         }
 
         return view;
+    }
+    
+    @Override
+    public void onResume() {
+        super.onResume();
+        // 从其他页面返回时刷新列表（避免显示已删除的文件）
+        if (adapter != null && adapter.getItemCount() > 0) {
+            refreshFiles();
+        }
     }
     
     private void setupSelectionButtons() {
@@ -142,6 +175,11 @@ public class HomeFragment extends Fragment {
         
         selectFavoritesButton.setOnClickListener(v -> {
             adapter.selectAllFavorites();
+            // updateSelectionUI 会在 listener 回调中自动调用
+        });
+        
+        selectPendingDeletesButton.setOnClickListener(v -> {
+            adapter.selectAllPendingDeletes();
             // updateSelectionUI 会在 listener 回调中自动调用
         });
         
@@ -585,6 +623,10 @@ public class HomeFragment extends Fragment {
         super.onDestroy();
         if (deleteExecutor != null) {
             deleteExecutor.shutdown();
+        }
+        // 移除监听器，避免内存泄漏
+        if (pendingDeleteManager != null) {
+            pendingDeleteManager.setOnFileDeletedListener(null);
         }
     }
 }

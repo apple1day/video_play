@@ -24,11 +24,13 @@ public class PlayerActivity extends AppCompatActivity {
     
     private PlayerView playerView;
     private ImageButton favoriteButton;
+    private ImageButton pendingDeleteButton;
     private ExoPlayer player;
     private ArrayList<String> fileList;
     private int currentIndex;
     private String currentFilePath;
     private FavoriteManager favoriteManager;
+    private PendingDeleteManager pendingDeleteManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,8 +39,10 @@ public class PlayerActivity extends AppCompatActivity {
         
         playerView = findViewById(R.id.player_view);
         favoriteButton = findViewById(R.id.favorite_button);
+        pendingDeleteButton = findViewById(R.id.pending_delete_button);
         
         favoriteManager = FavoriteManager.getInstance(this);
+        pendingDeleteManager = PendingDeleteManager.getInstance(this);
         
         Intent intent = getIntent();
         currentFilePath = intent.getStringExtra("file_path");
@@ -54,8 +58,10 @@ public class PlayerActivity extends AppCompatActivity {
 
         initializePlayer();
         updateFavoriteButton();
+        updatePendingDeleteButton();
 
         favoriteButton.setOnClickListener(v -> toggleFavorite());
+        pendingDeleteButton.setOnClickListener(v -> togglePendingDelete());
     }
     
     private void toggleFavorite() {
@@ -69,6 +75,20 @@ public class PlayerActivity extends AppCompatActivity {
         String message = isFavorited 
             ? getString(R.string.favorited) 
             : getString(R.string.unfavorited);
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+    
+    private void togglePendingDelete() {
+        if (currentFilePath == null) {
+            return;
+        }
+        
+        boolean isPending = pendingDeleteManager.togglePendingDelete(currentFilePath);
+        updatePendingDeleteButton();
+        
+        String message = isPending 
+            ? getString(R.string.marked_for_deletion) 
+            : getString(R.string.unmarked_for_deletion);
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
     
@@ -86,6 +106,21 @@ public class PlayerActivity extends AppCompatActivity {
             // 空心星星
             favoriteButton.setImageResource(android.R.drawable.btn_star_big_off);
             favoriteButton.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
+        }
+    }
+    
+    private void updatePendingDeleteButton() {
+        if (currentFilePath == null) {
+            return;
+        }
+        
+        boolean isPending = pendingDeleteManager.isPendingDelete(currentFilePath);
+        if (isPending) {
+            // 红色删除图标
+            pendingDeleteButton.setColorFilter(Color.parseColor("#FF0000"), PorterDuff.Mode.SRC_IN);
+        } else {
+            // 白色删除图标
+            pendingDeleteButton.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
         }
     }
 
@@ -153,6 +188,7 @@ public class PlayerActivity extends AppCompatActivity {
                     currentIndex = player.getCurrentMediaItemIndex();
                     currentFilePath = fileList.get(currentIndex);
                     updateFavoriteButton();
+                    updatePendingDeleteButton();
                 }
             }
         });

@@ -29,6 +29,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     private boolean isSelectionMode = false;
     private Set<Integer> selectedPositions = new HashSet<>();
     private FavoriteManager favoriteManager;
+    private PendingDeleteManager pendingDeleteManager;
     private Context context;
 
     public interface OnItemClickListener {
@@ -51,6 +52,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     public void setContext(Context context) {
         this.context = context;
         this.favoriteManager = FavoriteManager.getInstance(context);
+        this.pendingDeleteManager = PendingDeleteManager.getInstance(context);
     }
 
     public void updateFiles(List<FileItem> newFiles) {
@@ -132,6 +134,35 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         }
     }
     
+    /**
+     * 选择所有待删除的文件
+     */
+    public void selectAllPendingDeletes() {
+        // 确保 pendingDeleteManager 已初始化
+        if (pendingDeleteManager == null && context != null) {
+            pendingDeleteManager = PendingDeleteManager.getInstance(context);
+        }
+        
+        if (pendingDeleteManager == null) {
+            return;
+        }
+        
+        selectedPositions.clear();
+        for (int i = 0; i < files.size(); i++) {
+            FileItem item = files.get(i);
+            if (item.getFileType() == FileItem.FileType.VIDEO) {
+                String filePath = item.getFile().getAbsolutePath();
+                if (pendingDeleteManager.isPendingDelete(filePath)) {
+                    selectedPositions.add(i);
+                }
+            }
+        }
+        notifyDataSetChanged();
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(selectedPositions.size());
+        }
+    }
+    
     public void clearSelection() {
         selectedPositions.clear();
         notifyDataSetChanged();
@@ -163,6 +194,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         context = parent.getContext();
         favoriteManager = FavoriteManager.getInstance(context);
+        pendingDeleteManager = PendingDeleteManager.getInstance(context);
         View view = LayoutInflater.from(context)
             .inflate(R.layout.item_file, parent, false);
         return new ViewHolder(view);
@@ -185,6 +217,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         private TextView fileInfo;
         private CheckBox checkBox;
         private ImageView favoriteIcon;
+        private ImageView pendingDeleteIcon;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -193,6 +226,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             fileInfo = itemView.findViewById(R.id.file_info);
             checkBox = itemView.findViewById(R.id.checkbox);
             favoriteIcon = itemView.findViewById(R.id.favorite_icon);
+            pendingDeleteIcon = itemView.findViewById(R.id.pending_delete_icon);
 
             itemView.setOnClickListener(v -> {
                 int position = getAdapterPosition();
@@ -270,6 +304,22 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
                     }
                 } else {
                     favoriteIcon.setVisibility(View.GONE);
+                }
+            }
+            
+            // 设置待删除图标
+            if (pendingDeleteIcon != null && pendingDeleteManager != null) {
+                if (item.getFileType() == FileItem.FileType.VIDEO) {
+                    String filePath = item.getFile().getAbsolutePath();
+                    boolean isPending = pendingDeleteManager.isPendingDelete(filePath);
+                    if (isPending) {
+                        pendingDeleteIcon.setVisibility(View.VISIBLE);
+                        pendingDeleteIcon.setColorFilter(Color.parseColor("#FF0000"), PorterDuff.Mode.SRC_IN);
+                    } else {
+                        pendingDeleteIcon.setVisibility(View.GONE);
+                    }
+                } else {
+                    pendingDeleteIcon.setVisibility(View.GONE);
                 }
             }
             
