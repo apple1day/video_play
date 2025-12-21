@@ -47,6 +47,7 @@ public class HomeFragment extends Fragment {
     private View toolbarLayout;
     private View selectionToolbarLayout;
     private Button selectAllButton;
+    private Button selectFavoritesButton;
     private Button deleteSelectedButton;
     private Button cancelSelectionButton;
     private TextView selectedCountText;
@@ -78,6 +79,7 @@ public class HomeFragment extends Fragment {
         toolbarLayout = view.findViewById(R.id.toolbar_layout);
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
         selectAllButton = view.findViewById(R.id.select_all_button);
+        selectFavoritesButton = view.findViewById(R.id.select_favorites_button);
         deleteSelectedButton = view.findViewById(R.id.delete_selected_button);
         cancelSelectionButton = view.findViewById(R.id.cancel_selection_button);
         selectedCountText = view.findViewById(R.id.selected_count_text);
@@ -95,6 +97,9 @@ public class HomeFragment extends Fragment {
                 startActivity(intent);
             }
         });
+        
+        // 设置 context 以初始化 FavoriteManager
+        adapter.setContext(getContext());
         
         // 监听选择状态变化
         adapter.setSelectionChangeListener(count -> {
@@ -121,8 +126,23 @@ public class HomeFragment extends Fragment {
     
     private void setupSelectionButtons() {
         selectAllButton.setOnClickListener(v -> {
-            adapter.selectAll();
-            updateSelectionUI();
+            int currentCount = adapter.getSelectedCount();
+            int totalCount = adapter.getItemCount();
+            
+            // 检查是否所有项都已选中
+            if (currentCount == totalCount && totalCount > 0) {
+                // 如果全部已选中，则取消全选
+                adapter.clearSelection();
+            } else {
+                // 否则全选
+                adapter.selectAll();
+            }
+            // updateSelectionUI 会在 listener 回调中自动调用
+        });
+        
+        selectFavoritesButton.setOnClickListener(v -> {
+            adapter.selectAllFavorites();
+            // updateSelectionUI 会在 listener 回调中自动调用
         });
         
         deleteSelectedButton.setOnClickListener(v -> {
@@ -134,7 +154,7 @@ public class HomeFragment extends Fragment {
         
         cancelSelectionButton.setOnClickListener(v -> {
             adapter.setSelectionMode(false);
-            updateSelectionUI();
+            // setSelectionMode 会调用 clearSelection，进而触发 listener
         });
     }
     
@@ -143,8 +163,16 @@ public class HomeFragment extends Fragment {
             toolbarLayout.setVisibility(View.GONE);
             selectionToolbarLayout.setVisibility(View.VISIBLE);
             int count = adapter.getSelectedCount();
+            int total = adapter.getItemCount();
             selectedCountText.setText(getString(R.string.selected_count, count));
             deleteSelectedButton.setEnabled(count > 0);
+            
+            // 根据选中状态更新"全选"按钮文本
+            if (count == total && total > 0) {
+                selectAllButton.setText(R.string.deselect_all);
+            } else {
+                selectAllButton.setText(R.string.select_all);
+            }
         } else {
             toolbarLayout.setVisibility(View.VISIBLE);
             selectionToolbarLayout.setVisibility(View.GONE);

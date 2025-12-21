@@ -1,5 +1,8 @@
 package androidx.media3.demo.filebrowser;
 
+import android.content.Context;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -25,6 +28,8 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     private OnSelectionChangeListener selectionChangeListener;
     private boolean isSelectionMode = false;
     private Set<Integer> selectedPositions = new HashSet<>();
+    private FavoriteManager favoriteManager;
+    private Context context;
 
     public interface OnItemClickListener {
         void onItemClick(FileItem item);
@@ -41,6 +46,11 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     public FileAdapter(List<FileItem> files, OnItemClickListener listener) {
         this.files = files;
         this.listener = listener;
+    }
+    
+    public void setContext(Context context) {
+        this.context = context;
+        this.favoriteManager = FavoriteManager.getInstance(context);
     }
 
     public void updateFiles(List<FileItem> newFiles) {
@@ -93,6 +103,35 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         }
     }
     
+    /**
+     * 选择所有收藏的文件
+     */
+    public void selectAllFavorites() {
+        // 确保 favoriteManager 已初始化
+        if (favoriteManager == null && context != null) {
+            favoriteManager = FavoriteManager.getInstance(context);
+        }
+        
+        if (favoriteManager == null) {
+            return;
+        }
+        
+        selectedPositions.clear();
+        for (int i = 0; i < files.size(); i++) {
+            FileItem item = files.get(i);
+            if (item.getFileType() == FileItem.FileType.VIDEO) {
+                String filePath = item.getFile().getAbsolutePath();
+                if (favoriteManager.isFavorite(filePath)) {
+                    selectedPositions.add(i);
+                }
+            }
+        }
+        notifyDataSetChanged();
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(selectedPositions.size());
+        }
+    }
+    
     public void clearSelection() {
         selectedPositions.clear();
         notifyDataSetChanged();
@@ -122,7 +161,9 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext())
+        context = parent.getContext();
+        favoriteManager = FavoriteManager.getInstance(context);
+        View view = LayoutInflater.from(context)
             .inflate(R.layout.item_file, parent, false);
         return new ViewHolder(view);
     }
@@ -143,6 +184,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         private TextView fileName;
         private TextView fileInfo;
         private CheckBox checkBox;
+        private ImageView favoriteIcon;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -150,6 +192,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             fileName = itemView.findViewById(R.id.file_name);
             fileInfo = itemView.findViewById(R.id.file_info);
             checkBox = itemView.findViewById(R.id.checkbox);
+            favoriteIcon = itemView.findViewById(R.id.favorite_icon);
 
             itemView.setOnClickListener(v -> {
                 int position = getAdapterPosition();
@@ -213,6 +256,22 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
             info.append(sdf.format(new Date(item.getLastModified())));
             fileInfo.setText(info.toString());
+            
+            // 设置收藏图标
+            if (favoriteIcon != null && favoriteManager != null) {
+                if (item.getFileType() == FileItem.FileType.VIDEO) {
+                    String filePath = item.getFile().getAbsolutePath();
+                    boolean isFavorited = favoriteManager.isFavorite(filePath);
+                    if (isFavorited) {
+                        favoriteIcon.setVisibility(View.VISIBLE);
+                        favoriteIcon.setColorFilter(Color.parseColor("#FFD700"), PorterDuff.Mode.SRC_IN);
+                    } else {
+                        favoriteIcon.setVisibility(View.GONE);
+                    }
+                } else {
+                    favoriteIcon.setVisibility(View.GONE);
+                }
+            }
             
             // 设置多选模式
             if (checkBox != null) {

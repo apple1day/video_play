@@ -23,6 +23,7 @@
     <string name="list_view">列表视图</string>
     <string name="grid_view">网格视图</string>
     <string name="select_all">全选</string>
+    <string name="deselect_all">取消全选</string>
     <string name="cancel_selection">取消</string>
     <string name="delete_selected">删除选中</string>
     <string name="selected_count">已选择 %d 项</string>
@@ -31,5 +32,9 @@
     <string name="developer_name">AndroidX Media3 Team</string>
     <string name="developer_contact">15521288734@163.com</string>
     <string name="copyright_text">Copyright © 2024 AndroidX Media3\n基于 Apache License 2.0 开源协议</string>
+    <string name="favorite">收藏</string>
+    <string name="favorited">已收藏</string>
+    <string name="unfavorited">已取消收藏</string>
+    <string name="select_all_favorites">选择所有收藏</string>
 </resources>
 
