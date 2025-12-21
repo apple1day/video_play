@@ -33,9 +33,9 @@ android {
     }
 
     defaultConfig {
-        applicationId 'com.storytellerstudio.knightstour'
-        versionName '2.4.5'
-        versionCode 296
+        applicationId 'com.anxiong666.www'
+        versionName '2.4.6'
+        versionCode 297
         minSdkVersion 25
         targetSdkVersion 36
     }

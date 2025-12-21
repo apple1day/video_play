@@ -145,13 +145,34 @@ public class PlayerActivity extends AppCompatActivity {
             return;
         }
         
+        // 检查是否有删除权限
+        if (!PermissionManager.hasManageStoragePermission()) {
+            Log.w(TAG, "deleteCurrentFile: 没有 MANAGE_EXTERNAL_STORAGE 权限");
+            Toast.makeText(this, 
+                "需要\"管理所有文件\"权限才能删除文件", 
+                Toast.LENGTH_LONG).show();
+            PermissionManager.requestManageStoragePermission(this);
+            return;
+        }
+        
         File file = new File(currentFilePath);
         String fileName = file.getName();
         
         Log.d(TAG, "deleteCurrentFile: 准备删除文件 - " + currentFilePath);
+        Log.d(TAG, "deleteCurrentFile: 文件存在 - " + file.exists());
+        Log.d(TAG, "deleteCurrentFile: 文件可读 - " + file.canRead());
+        Log.d(TAG, "deleteCurrentFile: 文件可写 - " + file.canWrite());
+        Log.d(TAG, "deleteCurrentFile: 文件大小 - " + file.length() + " bytes");
         
         // 保存要删除的文件路径
         String fileToDelete = currentFilePath;
+        
+        // ⚠️ 关键：先释放播放器对文件的占用
+        if (player != null) {
+            Log.d(TAG, "deleteCurrentFile: 释放播放器资源");
+            player.stop();
+            player.clearMediaItems();
+        }
         
         // 先切换到下一个视频或关闭播放器
         if (player != null && fileList != null && !fileList.isEmpty()) {
@@ -247,13 +268,18 @@ public class PlayerActivity extends AppCompatActivity {
                     Log.d(TAG, "deleteFileAsync: 文件可写性 - " + file.canWrite());
                     Log.d(TAG, "deleteFileAsync: 文件大小 - " + file.length() + " bytes");
                     Log.d(TAG, "deleteFileAsync: 文件路径 - " + file.getAbsolutePath());
+                    Log.d(TAG, "deleteFileAsync: Android 版本 - " + Build.VERSION.SDK_INT);
                     
-                    // 等待一小段时间确保文件资源被释放
+                    // 等待较长时间确保播放器完全释放文件资源
                     try {
-                        Thread.sleep(500);
+                        Thread.sleep(1000);  // 增加到1秒
                     } catch (InterruptedException e) {
                         Log.w(TAG, "deleteFileAsync: 等待被中断", e);
                     }
+                    
+                    // 再次确认文件状态
+                    Log.d(TAG, "deleteFileAsync: 等待后文件仍存在 - " + file.exists());
+                    Log.d(TAG, "deleteFileAsync: 等待后文件可写 - " + file.canWrite());
                     
                     // Android 10+ (API 29+) 需要使用 MediaStore API 删除媒体文件
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -336,37 +362,39 @@ public class PlayerActivity extends AppCompatActivity {
                 int deleted = resolver.delete(uri, null, null);
                 Log.e(TAG, "deleteFileUsingMediaStore: MediaStore 删除结果 - " + deleted + ", URI: " + uri);
                 
-                // 检查文件是否真的被删除了
-                if (deleted > 0) {
-                    // 等待一下让系统完成删除操作
-                    try {
-                        Thread.sleep(200);
-                    } catch (InterruptedException e) {
-                        Log.w(TAG, "deleteFileUsingMediaStore: 等待被中断", e);
-                    }
-                    
-                    // 如果文件仍然存在，尝试直接删除
-                    if (file.exists()) {
+                    // 检查文件是否真的被删除了
+                    if (deleted > 0) {
+                        // 等待系统完成删除操作
+                        try {
+                            Thread.sleep(500);  // 增加等待时间
+                        } catch (InterruptedException e) {
+                            Log.w(TAG, "deleteFileUsingMediaStore: 等待被中断", e);
+                        }
+                        
+                        // 检查文件是否已被删除
+                        if (!file.exists()) {
+                            Log.d(TAG, "deleteFileUsingMediaStore: MediaStore 删除成功");
+                            return true;
+                        }
+                        
+                        // 如果文件仍然存在，尝试直接删除
                         Log.w(TAG, "deleteFileUsingMediaStore: MediaStore删除后文件仍存在，尝试直接删除");
-                        // 即使 canWrite() 返回 false，也尝试直接删除
                         boolean directDeleted = file.delete();
                         if (directDeleted) {
                             Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功");
                             return true;
-                        } else {
-                            // 再次检查文件是否存在
-                            if (!file.exists()) {
-                                Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（可能已被删除）");
-                                return true;
-                            }
-                            Log.e(TAG, "deleteFileUsingMediaStore: 直接删除也失败，文件仍存在");
-                            Log.e(TAG, "deleteFileUsingMediaStore: 文件可写性 - " + file.canWrite());
                         }
-                    } else {
-                        Log.d(TAG, "deleteFileUsingMediaStore: 文件已成功删除");
-                        return true;
+                        
+                        // 再次检查文件是否存在
+                        if (!file.exists()) {
+                            Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（可能已被删除）");
+                            return true;
+                        }
+                        
+                        Log.e(TAG, "deleteFileUsingMediaStore: 直接删除也失败，文件仍存在");
+                        Log.e(TAG, "deleteFileUsingMediaStore: 文件可写性 - " + file.canWrite());
+                        return false;
                     }
-                }
                 
                 // 如果MediaStore删除失败，尝试直接删除文件（即使 canWrite() 返回 false）
                 if (deleted == 0) {
@@ -408,21 +436,48 @@ public class PlayerActivity extends AppCompatActivity {
                 return false;
             }
         } catch (SecurityException e) {
-            Log.e(TAG, "deleteFileUsingMediaStore: 权限异常", e);
-            // 权限不足时，尝试直接删除（即使 canWrite() 返回 false）
+            Log.e(TAG, "deleteFileUsingMediaStore: 权限异常 - " + e.getClass().getSimpleName(), e);
+            
+            // Android 10+ 删除其他应用的文件可能需要用户授权
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && 
+                e instanceof android.app.RecoverableSecurityException) {
+                
+                android.app.RecoverableSecurityException recoverableException = 
+                    (android.app.RecoverableSecurityException) e;
+                
+                // 在主线程请求用户授权
+                mainHandler.post(() -> {
+                    try {
+                        Log.d(TAG, "deleteFileUsingMediaStore: 请求用户授权删除");
+                        android.app.PendingIntent pendingIntent = 
+                            recoverableException.getUserAction().getActionIntent();
+                        startIntentSenderForResult(
+                            pendingIntent.getIntentSender(),
+                            1001,  // requestCode
+                            null,
+                            0,
+                            0,
+                            0,
+                            null
+                        );
+                    } catch (Exception ex) {
+                        Log.e(TAG, "deleteFileUsingMediaStore: 无法启动授权对话框", ex);
+                        Toast.makeText(PlayerActivity.this, 
+                            "删除失败：需要用户授权，请在设置中授予\"管理所有文件\"权限", 
+                            Toast.LENGTH_LONG).show();
+                    }
+                });
+                return false;
+            }
+            
+            // 尝试直接删除
             boolean directDeleted = file.delete();
-            if (directDeleted) {
+            if (directDeleted || !file.exists()) {
                 Log.d(TAG, "deleteFileUsingMediaStore: 直接删除成功（权限异常后）");
                 return true;
-            } else {
-                // 检查文件是否还存在
-                if (!file.exists()) {
-                    Log.d(TAG, "deleteFileUsingMediaStore: 文件已不存在（权限异常后）");
-                    return true;
-                } else {
-                    Log.e(TAG, "deleteFileUsingMediaStore: 权限异常后直接删除也失败", e);
-                }
             }
+            
+            Log.e(TAG, "deleteFileUsingMediaStore: 权限异常后直接删除也失败", e);
             return false;
         } catch (Exception e) {
             Log.e(TAG, "deleteFileUsingMediaStore: 发生异常", e);

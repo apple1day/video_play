@@ -1,5 +1,6 @@
 package androidx.media3.demo.filebrowser;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -29,6 +30,7 @@ public class MoreFragment extends Fragment {
     private LinearLayout storageInfoLayout;
     private TextView pathTextView;
     private View backButton;
+    private View settingsButton;
     private FileBrowserAdapter adapter;
     private File currentDirectory;
     private List<File> directoryHistory = new ArrayList<>();
@@ -43,6 +45,7 @@ public class MoreFragment extends Fragment {
         storageInfoLayout = view.findViewById(R.id.storage_info_layout);
         pathTextView = view.findViewById(R.id.path_text);
         backButton = view.findViewById(R.id.back_button);
+        settingsButton = view.findViewById(R.id.settings_button);
 
         adapter = new FileBrowserAdapter(new ArrayList<>(), item -> {
             if (item.isDirectory()) {
@@ -59,6 +62,14 @@ public class MoreFragment extends Fragment {
         // 设置返回按钮点击事件
         if (backButton != null) {
             backButton.setOnClickListener(v -> navigateBack());
+        }
+
+        // 设置按钮点击事件
+        if (settingsButton != null) {
+            settingsButton.setOnClickListener(v -> {
+                Intent intent = new Intent(getActivity(), SettingsActivity.class);
+                startActivity(intent);
+            });
         }
 
         if (PermissionHelper.hasMediaPermissions(getActivity())) {

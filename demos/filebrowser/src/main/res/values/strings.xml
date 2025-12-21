@@ -28,5 +28,8 @@
     <string name="selected_count">已选择 %d 项</string>
     <string name="delete_success">删除成功</string>
     <string name="delete_failed">删除失败</string>
+    <string name="developer_name">AndroidX Media3 Team</string>
+    <string name="developer_contact">15521288734@163.com</string>
+    <string name="copyright_text">Copyright © 2024 AndroidX Media3\n基于 Apache License 2.0 开源协议</string>
 </resources>
 

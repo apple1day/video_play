@@ -45,6 +45,14 @@
             android:contentDescription="返回上一级"
             android:visibility="gone" />
 
+        <ImageButton
+            android:id="@+id/settings_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_preferences"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="设置" />
+
     </LinearLayout>
 
     <TextView

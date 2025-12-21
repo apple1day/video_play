@@ -315,6 +315,16 @@ public class HomeFragment extends Fragment {
             return;
         }
         
+        // 检查是否有删除权限
+        if (!PermissionManager.hasManageStoragePermission()) {
+            Log.w(TAG, "deleteSelectedFiles: 没有 MANAGE_EXTERNAL_STORAGE 权限");
+            Toast.makeText(getContext(), 
+                "需要\"管理所有文件\"权限才能删除文件", 
+                Toast.LENGTH_LONG).show();
+            PermissionManager.requestManageStoragePermission(getActivity());
+            return;
+        }
+        
         // 退出多选模式
         adapter.setSelectionMode(false);
         updateSelectionUI();
@@ -402,33 +412,76 @@ public class HomeFragment extends Fragment {
             Uri uri = getMediaStoreUri(file);
             
             if (uri != null) {
-                int deleted = resolver.delete(uri, null, null);
-                if (deleted > 0) {
-                    // 等待一下让系统完成删除操作
-                    try {
-                        Thread.sleep(200);
-                    } catch (InterruptedException e) {
-                        // 忽略
-                    }
+                Log.d(TAG, "deleteFileUsingMediaStore: 找到 MediaStore URI - " + uri);
+                
+                try {
+                    int deleted = resolver.delete(uri, null, null);
+                    Log.d(TAG, "deleteFileUsingMediaStore: 删除结果 - " + deleted);
                     
-                    // 检查文件是否真的被删除了
-                    if (!file.exists()) {
-                        return true;
+                    if (deleted > 0) {
+                        // 等待一下让系统完成删除操作
+                        try {
+                            Thread.sleep(300);
+                        } catch (InterruptedException e) {
+                            // 忽略
+                        }
+                        
+                        // 检查文件是否真的被删除了
+                        if (!file.exists()) {
+                            return true;
+                        }
+                        
+                        Log.w(TAG, "deleteFileUsingMediaStore: MediaStore 删除后文件仍存在");
                     }
+                } catch (SecurityException securityException) {
+                    // Android 10+ 删除其他应用的文件会抛出 RecoverableSecurityException
+                    Log.e(TAG, "deleteFileUsingMediaStore: 需要用户授权删除", securityException);
                     
-                    // 如果文件仍然存在，尝试直接删除
-                    return file.delete();
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        // 在主线程请求用户授权
+                        mainHandler.post(() -> {
+                            try {
+                                if (securityException instanceof android.app.RecoverableSecurityException) {
+                                    android.app.RecoverableSecurityException recoverableException = 
+                                        (android.app.RecoverableSecurityException) securityException;
+                                    
+                                    // 启动系统的删除确认对话框
+                                    android.app.PendingIntent pendingIntent = 
+                                        recoverableException.getUserAction().getActionIntent();
+                                    startIntentSenderForResult(
+                                        pendingIntent.getIntentSender(),
+                                        1001,  // requestCode
+                                        null,
+                                        0,
+                                        0,
+                                        0,
+                                        null
+                                    );
+                                }
+                            } catch (Exception e) {
+                                Log.e(TAG, "deleteFileUsingMediaStore: 无法启动授权对话框", e);
+                                Toast.makeText(getContext(), "删除失败：需要用户授权", Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
+                    return false;
                 }
                 
-                // MediaStore删除返回0，尝试直接删除
-                return file.delete();
+                // 如果 MediaStore 删除返回0或失败，尝试直接删除
+                boolean directDeleted = file.delete();
+                Log.d(TAG, "deleteFileUsingMediaStore: 直接删除结果 - " + directDeleted);
+                return directDeleted;
             } else {
-                // 无法获取URI，尝试直接删除
-                return file.delete();
+                Log.w(TAG, "deleteFileUsingMediaStore: 无法获取 MediaStore URI，尝试直接删除");
+                boolean directDeleted = file.delete();
+                Log.d(TAG, "deleteFileUsingMediaStore: 直接删除结果 - " + directDeleted);
+                return directDeleted;
             }
         } catch (Exception e) {
             Log.e(TAG, "deleteFileUsingMediaStore: 删除异常", e);
-            return file.delete();
+            boolean directDeleted = file.delete();
+            Log.d(TAG, "deleteFileUsingMediaStore: 异常后直接删除结果 - " + directDeleted);
+            return directDeleted;
         }
     }
     
@@ -508,4 +561,4 @@ public class HomeFragment extends Fragment {
     }
 }
 
-
+
