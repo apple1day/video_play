@@ -40,5 +40,10 @@
     <string name="marked_for_deletion">已标记为待删除</string>
     <string name="unmarked_for_deletion">已取消待删除标记</string>
     <string name="select_pending_deletes">选择待删除</string>
+    <string name="next_video">下一个视频</string>
+    <string name="previous_video">上一个视频</string>
+    <string name="last_video">已经是最后一个视频了</string>
+    <string name="first_video">已经是第一个视频了</string>
 </resources>
+
 

@@ -5,6 +5,9 @@ import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+import android.view.View;
 import android.widget.ImageButton;
 import android.widget.Toast;
 
@@ -31,6 +34,7 @@ public class PlayerActivity extends AppCompatActivity {
     private String currentFilePath;
     private FavoriteManager favoriteManager;
     private PendingDeleteManager pendingDeleteManager;
+    private GestureDetector gestureDetector;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,6 +66,108 @@ public class PlayerActivity extends AppCompatActivity {
 
         favoriteButton.setOnClickListener(v -> toggleFavorite());
         pendingDeleteButton.setOnClickListener(v -> togglePendingDelete());
+        
+        // 设置手势检测
+        setupGestureDetector();
+    }
+    
+    private void setupGestureDetector() {
+        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            private static final int SWIPE_THRESHOLD = 100;
+            private static final int SWIPE_VELOCITY_THRESHOLD = 100;
+            
+            @Override
+            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+                if (e1 == null || e2 == null) {
+                    return false;
+                }
+                
+                float diffX = e2.getX() - e1.getX();
+                float diffY = e2.getY() - e1.getY();
+                
+                if (Math.abs(diffY) > Math.abs(diffX)) {
+                    // 垂直滑动
+                    if (Math.abs(diffY) > SWIPE_THRESHOLD && Math.abs(velocityY) > SWIPE_VELOCITY_THRESHOLD) {
+                        if (diffY > 0) {
+                            // 下滑 - 播放上一个视频
+                            onSwipeDown();
+                        } else {
+                            // 上滑 - 播放下一个视频
+                            onSwipeUp();
+                        }
+                        return true;
+                    }
+                } else {
+                    // 水平滑动
+                    if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                        if (diffX > 0) {
+                            // 右滑 - 加入收藏
+                            onSwipeRight();
+                        } else {
+                            // 左滑 - 加入待删除
+                            onSwipeLeft();
+                        }
+                        return true;
+                    }
+                }
+                
+                return false;
+            }
+        });
+        
+        // 为PlayerView添加触摸监听
+        playerView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                return gestureDetector.onTouchEvent(event);
+            }
+        });
+    }
+    
+    private void onSwipeUp() {
+        // 上滑播放下一个视频
+        playNextVideo();
+    }
+    
+    private void onSwipeDown() {
+        // 下滑播放上一个视频
+        playPreviousVideo();
+    }
+    
+    private void onSwipeLeft() {
+        // 左滑加入待删除
+        if (currentFilePath != null && !pendingDeleteManager.isPendingDelete(currentFilePath)) {
+            pendingDeleteManager.addPendingDelete(currentFilePath);
+            updatePendingDeleteButton();
+            Toast.makeText(this, getString(R.string.marked_for_deletion), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    private void onSwipeRight() {
+        // 右滑加入收藏
+        if (currentFilePath != null && !favoriteManager.isFavorite(currentFilePath)) {
+            favoriteManager.addFavorite(currentFilePath);
+            updateFavoriteButton();
+            Toast.makeText(this, getString(R.string.favorited), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    private void playNextVideo() {
+        if (player != null && player.hasNextMediaItem()) {
+            player.seekToNextMediaItem();
+            Toast.makeText(this, R.string.next_video, Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, R.string.last_video, Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    private void playPreviousVideo() {
+        if (player != null && player.hasPreviousMediaItem()) {
+            player.seekToPreviousMediaItem();
+            Toast.makeText(this, R.string.previous_video, Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, R.string.first_video, Toast.LENGTH_SHORT).show();
+        }
     }
     
     private void toggleFavorite() {
