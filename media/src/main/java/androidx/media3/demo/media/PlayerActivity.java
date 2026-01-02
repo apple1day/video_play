@@ -42,8 +42,6 @@ public class PlayerActivity extends AppCompatActivity {
         setContentView(R.layout.activity_player);
         
         playerView = findViewById(R.id.player_view);
-        favoriteButton = findViewById(R.id.favorite_button);
-        pendingDeleteButton = findViewById(R.id.pending_delete_button);
         
         favoriteManager = FavoriteManager.getInstance(this);
         pendingDeleteManager = PendingDeleteManager.getInstance(this);
@@ -61,11 +59,25 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         initializePlayer();
-        updateFavoriteButton();
-        updatePendingDeleteButton();
-
-        favoriteButton.setOnClickListener(v -> toggleFavorite());
-        pendingDeleteButton.setOnClickListener(v -> togglePendingDelete());
+        
+        // 延迟获取自定义控制器中的按钮
+        playerView.post(() -> {
+            View controllerView = playerView.findViewById(R.id.top_controls);
+            if (controllerView != null) {
+                favoriteButton = controllerView.findViewById(R.id.favorite_button);
+                pendingDeleteButton = controllerView.findViewById(R.id.pending_delete_button);
+                
+                if (favoriteButton != null) {
+                    favoriteButton.setOnClickListener(v -> toggleFavorite());
+                }
+                if (pendingDeleteButton != null) {
+                    pendingDeleteButton.setOnClickListener(v -> togglePendingDelete());
+                }
+                
+                updateFavoriteButton();
+                updatePendingDeleteButton();
+            }
+        });
         
         // 设置手势检测
         setupGestureDetector();
@@ -140,6 +152,9 @@ public class PlayerActivity extends AppCompatActivity {
             pendingDeleteManager.addPendingDelete(currentFilePath);
             updatePendingDeleteButton();
             Toast.makeText(this, getString(R.string.marked_for_deletion), Toast.LENGTH_SHORT).show();
+            
+            // 标记为待删除后，自动播放下一个视频
+            playNextVideo();
         }
     }
     
@@ -196,10 +211,15 @@ public class PlayerActivity extends AppCompatActivity {
             ? getString(R.string.marked_for_deletion) 
             : getString(R.string.unmarked_for_deletion);
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        
+        // 如果标记为待删除，自动播放下一个视频
+        if (isPending) {
+            playNextVideo();
+        }
     }
     
     private void updateFavoriteButton() {
-        if (currentFilePath == null) {
+        if (currentFilePath == null || favoriteButton == null) {
             return;
         }
         
@@ -216,7 +236,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
     
     private void updatePendingDeleteButton() {
-        if (currentFilePath == null) {
+        if (currentFilePath == null || pendingDeleteButton == null) {
             return;
         }
         

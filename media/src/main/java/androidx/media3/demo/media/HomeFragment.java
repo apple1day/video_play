@@ -7,6 +7,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
@@ -16,7 +17,10 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,6 +30,7 @@ import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -39,8 +44,10 @@ public class HomeFragment extends Fragment {
 
     private static final String TAG = "HomeFragment";
     
+    private SwipeRefreshLayout swipeRefreshLayout;
     private RecyclerView recyclerView;
     private TextView emptyView;
+    private Spinner storageSpinner;
     private Button sortTimeButton;
     private Button sortSizeButton;
     private Button viewToggleButton;
@@ -55,6 +62,7 @@ public class HomeFragment extends Fragment {
     private FileAdapter adapter;
     private List<FileItem> allFiles = new ArrayList<>();
     private List<FileItem> allVideoFiles = new ArrayList<>(); // 存储所有视频文件
+    private List<FileItem> displayedFiles = new ArrayList<>(); // 当前显示的视频列表（排序后）
     private FileItem.FileType currentFilter = FileItem.FileType.VIDEO;
     private SortType currentSort = SortType.TIME;
     private boolean timeSortDescending = true; // 默认从新到旧（降序）
@@ -63,6 +71,11 @@ public class HomeFragment extends Fragment {
     private ExecutorService deleteExecutor;
     private Handler mainHandler;
     private PendingDeleteManager pendingDeleteManager;
+    
+    // 存储相关
+    private List<File> storageDirectories = new ArrayList<>();
+    private boolean isInternalStorage = true; // true=内部存储, false=外部存储
+    private boolean hasExternalStorage = false; // 是否有外部存储
 
     private enum SortType {
         TIME, SIZE
@@ -73,8 +86,10 @@ public class HomeFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_home, container, false);
         
+        swipeRefreshLayout = view.findViewById(R.id.swipe_refresh_layout);
         recyclerView = view.findViewById(R.id.recycler_view);
         emptyView = view.findViewById(R.id.empty_view);
+        storageSpinner = view.findViewById(R.id.storage_spinner);
         sortTimeButton = view.findViewById(R.id.sort_time_button);
         sortSizeButton = view.findViewById(R.id.sort_size_button);
         viewToggleButton = view.findViewById(R.id.view_toggle_button);
@@ -92,10 +107,10 @@ public class HomeFragment extends Fragment {
                 Intent intent = new Intent(getContext(), PlayerActivity.class);
                 String currentPath = fileItem.getFile().getAbsolutePath();
                 intent.putExtra("file_path", currentPath);
-                // 传递所有视频文件列表，而不是当前筛选后的列表
-                intent.putExtra("file_list", getAllVideoFileList());
-                // 找到当前视频在所有视频列表中的索引
-                int index = findVideoIndexInAllList(currentPath);
+                // 传递当前排序后的视频文件列表
+                intent.putExtra("file_list", getCurrentDisplayedVideoList());
+                // 找到当前视频在显示列表中的索引
+                int index = findVideoIndexInDisplayedList(currentPath);
                 intent.putExtra("current_index", index);
                 startActivity(intent);
             }
@@ -112,6 +127,9 @@ public class HomeFragment extends Fragment {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         recyclerView.setAdapter(adapter);
         
+        // 设置下拉刷新
+        setupSwipeRefresh();
+        setupStorageSpinner();
         setupSortButtons();
         setupViewToggleButton();
         setupSelectionButtons();
@@ -146,6 +164,68 @@ public class HomeFragment extends Fragment {
         }
 
         return view;
+    }
+    
+    private void setupSwipeRefresh() {
+        swipeRefreshLayout.setColorSchemeResources(
+            android.R.color.holo_blue_bright,
+            android.R.color.holo_green_light,
+            android.R.color.holo_orange_light,
+            android.R.color.holo_red_light
+        );
+        
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            // 下拉刷新时重新加载文件
+            refreshFiles();
+        });
+    }
+    
+    private void setupStorageSpinner() {
+        // 检查存储设备
+        new Thread(() -> {
+            storageDirectories = FileUtils.getStorageDirectories(getContext());
+            
+            // 判断是否有外部存储
+            File externalStorage = Environment.getExternalStorageDirectory();
+            hasExternalStorage = false;
+            for (File dir : storageDirectories) {
+                if (!dir.equals(Environment.getDataDirectory()) && dir.exists()) {
+                    hasExternalStorage = true;
+                    break;
+                }
+            }
+            
+            new Handler(Looper.getMainLooper()).post(() -> {
+                List<String> storageOptions = new ArrayList<>();
+                storageOptions.add(getString(R.string.storage_internal));
+                
+                if (hasExternalStorage) {
+                    storageOptions.add(getString(R.string.storage_external));
+                }
+                
+                ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                    getContext(),
+                    android.R.layout.simple_spinner_item,
+                    storageOptions
+                );
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                storageSpinner.setAdapter(adapter);
+                
+                // 设置选择监听器
+                storageSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                        isInternalStorage = (position == 0);
+                        loadFiles();
+                    }
+                    
+                    @Override
+                    public void onNothingSelected(AdapterView<?> parent) {
+                        // 不做处理
+                    }
+                });
+            });
+        }).start();
     }
     
     @Override
@@ -297,19 +377,50 @@ public class HomeFragment extends Fragment {
 
     private void loadFiles() {
         new Thread(() -> {
-            List<File> storageDirectories = FileUtils.getStorageDirectories(getContext());
+            List<File> targetDirectories = new ArrayList<>();
+            
+            // 根据选择的存储类型筛选目录
+            if (isInternalStorage) {
+                // 内部存储
+                File dataDir = Environment.getDataDirectory();
+                for (File dir : storageDirectories) {
+                    if (dir.equals(dataDir)) {
+                        targetDirectories.add(dir);
+                        break;
+                    }
+                }
+            } else {
+                // 外部存储（所有非内部存储的目录）
+                File dataDir = Environment.getDataDirectory();
+                for (File dir : storageDirectories) {
+                    if (!dir.equals(dataDir)) {
+                        targetDirectories.add(dir);
+                    }
+                }
+            }
+            
+            // 如果没有找到目标目录，使用所有目录
+            if (targetDirectories.isEmpty()) {
+                targetDirectories = storageDirectories;
+            }
+            
             // 先扫描所有视频文件，用于播放列表
-            List<FileItem> allVideos = FileUtils.scanAllFiles(storageDirectories, FileItem.FileType.VIDEO);
+            List<FileItem> allVideos = FileUtils.scanAllFiles(targetDirectories, FileItem.FileType.VIDEO);
             // 对视频列表按时间排序（用于播放顺序）
             Collections.sort(allVideos, (o1, o2) -> Long.compare(o2.getLastModified(), o1.getLastModified()));
             
             // 再根据当前筛选条件扫描文件，用于显示
-            List<FileItem> files = FileUtils.scanAllFiles(storageDirectories, currentFilter);
+            List<FileItem> files = FileUtils.scanAllFiles(targetDirectories, currentFilter);
             
             new Handler(Looper.getMainLooper()).post(() -> {
                 allVideoFiles = allVideos; // 保存所有视频文件（已排序）
                 allFiles = files; // 保存当前筛选的文件
                 applyFilterAndSort();
+                
+                // 停止刷新动画
+                if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
+                    swipeRefreshLayout.setRefreshing(false);
+                }
             });
         }).start();
     }
@@ -338,6 +449,9 @@ public class HomeFragment extends Fragment {
             }
         });
 
+        // 保存当前显示的文件列表（用于播放器）
+        displayedFiles = new ArrayList<>(filtered);
+        
         adapter.updateFiles(filtered);
         
         if (filtered.isEmpty()) {
@@ -347,6 +461,29 @@ public class HomeFragment extends Fragment {
             emptyView.setVisibility(View.GONE);
             recyclerView.setVisibility(View.VISIBLE);
         }
+    }
+
+    /**
+     * 获取当前显示的视频文件路径列表（排序后）
+     * 用于播放器的播放列表
+     */
+    private ArrayList<String> getCurrentDisplayedVideoList() {
+        ArrayList<String> fileList = new ArrayList<>();
+        for (FileItem item : displayedFiles) {
+            if (item.getFileType() == FileItem.FileType.VIDEO) {
+                fileList.add(item.getFile().getAbsolutePath());
+            }
+        }
+        return fileList;
+    }
+    
+    /**
+     * 在当前显示的列表中找到视频的索引
+     */
+    private int findVideoIndexInDisplayedList(String filePath) {
+        ArrayList<String> videoList = getCurrentDisplayedVideoList();
+        int index = videoList.indexOf(filePath);
+        return index >= 0 ? index : 0;
     }
 
     /**

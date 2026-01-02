@@ -33,6 +33,10 @@ public class FileBrowserAdapter extends RecyclerView.Adapter<FileBrowserAdapter.
         this.files = newFiles;
         notifyDataSetChanged();
     }
+    
+    public List<FileItem> getFiles() {
+        return files;
+    }
 
     @NonNull
     @Override

@@ -81,14 +81,28 @@ public class PendingDeleteManager {
             
             // 检查是否超过最大数量
             int maxCount = getMaxPendingCount();
-            if (pendingFiles.size() > maxCount) {
-                // 删除最早添加的文件（异步）
+            while (pendingFiles.size() > maxCount && !pendingFiles.isEmpty()) {
+                // 删除最早添加的文件（同步删除）
                 String firstFile = pendingFiles.iterator().next();
                 pendingFiles.remove(firstFile);
-                deleteFileAsync(firstFile);
+                
+                // 立即删除文件
+                File file = new File(firstFile);
+                if (file.exists()) {
+                    boolean deleted = file.delete();
+                    Log.d(TAG, "addPendingDelete: 超过最大数量，删除文件 " + file.getName() + ", 结果: " + deleted);
+                    
+                    // 通知监听器
+                    if (deleted && onFileDeletedListener != null) {
+                        mainHandler.post(() -> onFileDeletedListener.onFileDeleted(firstFile));
+                    }
+                } else {
+                    Log.w(TAG, "addPendingDelete: 文件不存在 - " + firstFile);
+                }
             }
             
             savePendingFiles(pendingFiles);
+            Log.d(TAG, "addPendingDelete: 当前待删除数量 = " + pendingFiles.size());
         }
     }
     
@@ -188,13 +202,27 @@ public class PendingDeleteManager {
         
         // 检查当前待删除列表是否超过新的最大值
         LinkedHashSet<String> pendingFiles = new LinkedHashSet<>(getPendingFiles());
-        while (pendingFiles.size() > count) {
-            // 删除最早添加的文件（异步）
+        while (pendingFiles.size() > count && !pendingFiles.isEmpty()) {
+            // 删除最早添加的文件（同步删除）
             String firstFile = pendingFiles.iterator().next();
             pendingFiles.remove(firstFile);
-            deleteFileAsync(firstFile);
+            
+            // 立即删除文件
+            File file = new File(firstFile);
+            if (file.exists()) {
+                boolean deleted = file.delete();
+                Log.d(TAG, "setMaxPendingCount: 超过新的最大值，删除文件 " + file.getName() + ", 结果: " + deleted);
+                
+                // 通知监听器
+                if (deleted && onFileDeletedListener != null) {
+                    mainHandler.post(() -> onFileDeletedListener.onFileDeleted(firstFile));
+                }
+            } else {
+                Log.w(TAG, "setMaxPendingCount: 文件不存在 - " + firstFile);
+            }
         }
         savePendingFiles(pendingFiles);
+        Log.d(TAG, "setMaxPendingCount: 设置为 " + count + ", 当前待删除数量 = " + pendingFiles.size());
     }
     
     /**

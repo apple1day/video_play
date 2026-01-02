@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自定义播放器控制界面 - 无背景遮罩 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <!-- 顶部收藏和待删除按钮 -->
+    <LinearLayout
+        android:id="@+id/top_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="left|top"
+        android:layout_margin="16dp"
+        android:orientation="horizontal"
+        android:background="@android:color/transparent">
+
+        <ImageButton
+            android:id="@+id/favorite_button"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@android:drawable/btn_star_big_off"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/favorite" />
+
+        <ImageButton
+            android:id="@+id/pending_delete_button"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginStart="8dp"
+            android:src="@android:drawable/ic_menu_delete"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/pending_delete" />
+
+    </LinearLayout>
+
+    <!-- 底部控制栏（包含播放按钮、进度条、上一个、下一个） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="#80000000"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:paddingLeft="12dp"
+        android:paddingRight="12dp">
+
+        <!-- 进度条 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@id/exo_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingLeft="4dp"
+                android:paddingRight="8dp"
+                android:textColor="#FFFFFF"
+                android:includeFontPadding="false" />
+
+            <androidx.media3.ui.DefaultTimeBar
+                android:id="@id/exo_progress"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="26dp"
+                app:played_color="#FFFFFF"
+                app:scrubber_color="#FFFFFF"
+                app:buffered_color="#CCCCCC"
+                app:unplayed_color="#33FFFFFF" />
+
+            <TextView
+                android:id="@id/exo_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:paddingLeft="8dp"
+                android:paddingRight="4dp"
+                android:textColor="#FFFFFF"
+                android:includeFontPadding="false" />
+
+        </LinearLayout>
+
+        <!-- 控制按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <!-- 上一个视频 -->
+            <ImageButton
+                android:id="@id/exo_prev"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                android:background="@android:color/transparent"
+                android:src="@android:drawable/ic_media_previous"
+                android:contentDescription="@string/previous_video"
+                android:scaleType="fitCenter"
+                android:tint="#FFFFFF" />
+
+            <!-- 快退 -->
+            <ImageButton
+                android:id="@id/exo_rew"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                android:background="@android:color/transparent"
+                android:src="@android:drawable/ic_media_rew"
+                android:scaleType="fitCenter"
+                android:tint="#FFFFFF" />
+
+            <!-- 播放/暂停 -->
+            <ImageButton
+                android:id="@id/exo_play_pause"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_marginEnd="8dp"
+                android:layout_marginStart="8dp"
+                android:background="@android:color/transparent"
+                android:scaleType="fitCenter"
+                android:tint="#FFFFFF" />
+
+            <!-- 快进 -->
+            <ImageButton
+                android:id="@id/exo_ffwd"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:background="@android:color/transparent"
+                android:src="@android:drawable/ic_media_ff"
+                android:scaleType="fitCenter"
+                android:tint="#FFFFFF" />
+
+            <!-- 下一个视频 -->
+            <ImageButton
+                android:id="@id/exo_next"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:background="@android:color/transparent"
+                android:src="@android:drawable/ic_media_next"
+                android:contentDescription="@string/next_video"
+                android:scaleType="fitCenter"
+                android:tint="#FFFFFF" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>

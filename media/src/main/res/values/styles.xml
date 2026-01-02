@@ -4,5 +4,10 @@
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>
+    
+    <!-- 自定义播放器控制器样式 - 去掉背景遮罩 -->
+    <style name="TransparentPlayerControlView" parent="Widget.AppCompat.ActionButton">
+        <item name="android:background">@android:color/transparent</item>
+    </style>
 </resources>
 

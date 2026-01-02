@@ -7,8 +7,8 @@
     <string name="filter_audio">音乐</string>
     <string name="filter_document">文档</string>
     <string name="filter_all">全部</string>
-    <string name="sort_by_time">按时间排序</string>
-    <string name="sort_by_size">按大小排序</string>
+    <string name="sort_by_time">时间</string>
+    <string name="sort_by_size">大小</string>
     <string name="delete">删除</string>
     <string name="delete_confirm">确定要删除这个文件吗？</string>
     <string name="storage_info">存储信息</string>
@@ -44,6 +44,11 @@
     <string name="previous_video">上一个视频</string>
     <string name="last_video">已经是最后一个视频了</string>
     <string name="first_video">已经是第一个视频了</string>
+    <string name="storage_internal">内部</string>
+    <string name="storage_external">外部</string>
+    <string name="storage_label">存储:</string>
+    <string name="file_browser">文件浏览器</string>
 </resources>
+
 
 

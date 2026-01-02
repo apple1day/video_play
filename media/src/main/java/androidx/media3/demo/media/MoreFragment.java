@@ -1,6 +1,7 @@
 package androidx.media3.demo.media;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -8,7 +9,7 @@ import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
+import android.webkit.MimeTypeMap;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -27,7 +28,6 @@ import java.util.List;
 public class MoreFragment extends Fragment {
 
     private RecyclerView recyclerView;
-    private LinearLayout storageInfoLayout;
     private TextView pathTextView;
     private View backButton;
     private View settingsButton;
@@ -42,7 +42,6 @@ public class MoreFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_more, container, false);
         
         recyclerView = view.findViewById(R.id.recycler_view);
-        storageInfoLayout = view.findViewById(R.id.storage_info_layout);
         pathTextView = view.findViewById(R.id.path_text);
         backButton = view.findViewById(R.id.back_button);
         settingsButton = view.findViewById(R.id.settings_button);
@@ -51,8 +50,8 @@ public class MoreFragment extends Fragment {
             if (item.isDirectory()) {
                 navigateToDirectory(item.getFile());
             } else {
-                // 可以在这里添加文件点击处理，比如打开文件
-                Toast.makeText(getContext(), "文件: " + item.getName(), Toast.LENGTH_SHORT).show();
+                // 处理文件点击
+                handleFileClick(item);
             }
         });
 
@@ -73,7 +72,6 @@ public class MoreFragment extends Fragment {
         }
 
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
-            loadStorageInfo();
             loadRootDirectories();
         } else {
             showEmptyMessage(getString(R.string.permission_required));
@@ -81,119 +79,91 @@ public class MoreFragment extends Fragment {
 
         return view;
     }
+    
+    /**
+     * 处理文件点击事件
+     */
+    private void handleFileClick(FileItem item) {
+        File file = item.getFile();
+        
+        if (item.getFileType() == FileItem.FileType.VIDEO) {
+            // 视频文件：播放
+            Intent intent = new Intent(getContext(), PlayerActivity.class);
+            intent.putExtra("file_path", file.getAbsolutePath());
+            
+            // 获取当前目录下所有视频文件
+            ArrayList<String> videoList = new ArrayList<>();
+            List<FileItem> items = adapter.getFiles();
+            for (FileItem i : items) {
+                if (i.getFileType() == FileItem.FileType.VIDEO) {
+                    videoList.add(i.getFile().getAbsolutePath());
+                }
+            }
+            intent.putExtra("file_list", videoList);
+            
+            // 找到当前视频在列表中的索引
+            int index = videoList.indexOf(file.getAbsolutePath());
+            intent.putExtra("current_index", index >= 0 ? index : 0);
+            
+            startActivity(intent);
+        } else if (isImageFile(file)) {
+            // 图片文件：预览
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            Uri uri = Uri.fromFile(file);
+            intent.setDataAndType(uri, "image/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(getContext(), "无法打开图片", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            // 其他文件：显示文件信息
+            showFileInfo(item);
+        }
+    }
+    
+    /**
+     * 判断是否是图片文件
+     */
+    private boolean isImageFile(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".jpg") || name.endsWith(".jpeg") || 
+               name.endsWith(".png") || name.endsWith(".gif") || 
+               name.endsWith(".bmp") || name.endsWith(".webp");
+    }
+    
+    /**
+     * 显示文件信息
+     */
+    private void showFileInfo(FileItem item) {
+        String info = "文件名: " + item.getName() + "\n" +
+                     "大小: " + item.getFormattedSize() + "\n" +
+                     "类型: " + getFileTypeString(item.getFileType()) + "\n" +
+                     "路径: " + item.getFile().getAbsolutePath();
+        Toast.makeText(getContext(), info, Toast.LENGTH_LONG).show();
+    }
+    
+    /**
+     * 获取文件类型字符串
+     */
+    private String getFileTypeString(FileItem.FileType type) {
+        switch (type) {
+            case VIDEO: return "视频";
+            case AUDIO: return "音频";
+            case DOCUMENT: return "文档";
+            default: return "其他";
+        }
+    }
 
     public void refreshFiles() {
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
-            loadStorageInfo();
             if (currentDirectory != null) {
                 navigateToDirectory(currentDirectory);
             } else {
                 loadRootDirectories();
             }
         }
-    }
-
-    private void loadStorageInfo() {
-        new Thread(() -> {
-            storageRoots = FileUtils.getStorageDirectories(getContext());
-            List<FileUtils.StorageInfo> storageInfos = new ArrayList<>();
-            
-            for (File directory : storageRoots) {
-                storageInfos.add(FileUtils.getStorageInfo(directory));
-            }
-            
-            new Handler(Looper.getMainLooper()).post(() -> {
-                storageInfoLayout.removeAllViews();
-                
-                for (int i = 0; i < storageRoots.size(); i++) {
-                    File directory = storageRoots.get(i);
-                    FileUtils.StorageInfo info = storageInfos.get(i);
-                    
-                    String title = getStorageTitle(directory);
-                    View infoView = createStorageInfoView(title, info, directory);
-                    storageInfoLayout.addView(infoView);
-                }
-            });
-        }).start();
-    }
-
-    private String getStorageTitle(File directory) {
-        // 判断是内部存储还是外部存储
-        File dataDir = Environment.getDataDirectory();
-        File externalStorage = Environment.getExternalStorageDirectory();
-        
-        if (directory.equals(dataDir)) {
-            return getString(R.string.internal_storage);
-        } else if (directory.equals(externalStorage)) {
-            return getString(R.string.external_storage);
-        } else {
-            // 可能是U盘或其他外置存储
-            String path = directory.getAbsolutePath();
-            if (path.contains("/storage/")) {
-                // 提取存储设备名称
-                String[] parts = path.split("/");
-                if (parts.length > 2) {
-                    return "外置存储: " + parts[parts.length - 1];
-                }
-            }
-            return "存储设备: " + directory.getName();
-        }
-    }
-
-    private View createStorageInfoView(String title, FileUtils.StorageInfo info, File directory) {
-        LinearLayout layout = new LinearLayout(getContext());
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(32, 16, 32, 16);
-        layout.setBackgroundResource(android.R.drawable.dialog_holo_light_frame);
-        layout.setPadding(16, 16, 16, 16);
-        
-        // 设置点击事件，点击存储信息可以进入该存储根目录
-        layout.setOnClickListener(v -> {
-            navigateToDirectory(directory);
-        });
-        layout.setClickable(true);
-        layout.setFocusable(true);
-        
-        TextView titleView = new TextView(getContext());
-        titleView.setText(title);
-        titleView.setTextSize(16);
-        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
-        titleView.setPadding(0, 0, 0, 8);
-        layout.addView(titleView);
-        
-        TextView pathView = new TextView(getContext());
-        pathView.setText("路径: " + directory.getAbsolutePath());
-        pathView.setTextSize(12);
-        pathView.setTextColor(0xFF666666);
-        pathView.setPadding(0, 0, 0, 8);
-        layout.addView(pathView);
-        
-        TextView totalView = new TextView(getContext());
-        totalView.setText(getString(R.string.total_space) + ": " + info.getFormattedTotal());
-        totalView.setTextSize(14);
-        totalView.setPadding(0, 0, 0, 4);
-        layout.addView(totalView);
-        
-        TextView usedView = new TextView(getContext());
-        usedView.setText(getString(R.string.used_space) + ": " + info.getFormattedUsed());
-        usedView.setTextSize(14);
-        usedView.setPadding(0, 0, 0, 4);
-        layout.addView(usedView);
-        
-        TextView freeView = new TextView(getContext());
-        freeView.setText(getString(R.string.free_space) + ": " + info.getFormattedFree());
-        freeView.setTextSize(14);
-        layout.addView(freeView);
-        
-        // 添加边距
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        params.setMargins(0, 0, 0, 16);
-        layout.setLayoutParams(params);
-        
-        return layout;
     }
 
     private void loadRootDirectories() {
