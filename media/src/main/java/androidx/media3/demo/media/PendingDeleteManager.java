@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.widget.Toast;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -36,8 +37,8 @@ public class PendingDeleteManager {
      * 文件删除监听器
      */
     public interface OnFileDeletedListener {
-        void onFileDeleted(String filePath);
-        void onFilesDeleted(int count);
+        void onFileDeleted(String filePath, boolean success, String errorMessage);
+        void onFilesDeleted(int successCount, int failCount, List<String> failedFiles);
     }
     
     private PendingDeleteManager(Context context) {
@@ -87,18 +88,20 @@ public class PendingDeleteManager {
                 pendingFiles.remove(firstFile);
                 
                 // 立即删除文件
-                File file = new File(firstFile);
-                if (file.exists()) {
-                    boolean deleted = file.delete();
-                    Log.d(TAG, "addPendingDelete: 超过最大数量，删除文件 " + file.getName() + ", 结果: " + deleted);
-                    
-                    // 通知监听器
-                    if (deleted && onFileDeletedListener != null) {
-                        mainHandler.post(() -> onFileDeletedListener.onFileDeleted(firstFile));
-                    }
-                } else {
-                    Log.w(TAG, "addPendingDelete: 文件不存在 - " + firstFile);
+                DeleteResult result = deleteFileSync(firstFile);
+                Log.d(TAG, "addPendingDelete: 超过最大数量，删除文件 " + new File(firstFile).getName() 
+                    + ", 结果: " + result.success + ", 原因: " + result.errorMessage);
+                
+                // 通知监听器
+                if (onFileDeletedListener != null) {
+                    final String file = firstFile;
+                    final boolean success = result.success;
+                    final String error = result.errorMessage;
+                    mainHandler.post(() -> onFileDeletedListener.onFileDeleted(file, success, error));
                 }
+                
+                // 显示删除结果
+                showDeleteResult(firstFile, result);
             }
             
             savePendingFiles(pendingFiles);
@@ -157,21 +160,48 @@ public class PendingDeleteManager {
         // 异步删除所有文件
         deleteExecutor.execute(() -> {
             int successCount = 0;
+            int failCount = 0;
+            List<String> failedFiles = new ArrayList<>();
             
             for (String filePath : pendingFiles) {
-                if (deleteFile(filePath)) {
+                DeleteResult result = deleteFileSync(filePath);
+                if (result.success) {
                     successCount++;
+                } else {
+                    failCount++;
+                    failedFiles.add(new File(filePath).getName() + ": " + result.errorMessage);
                 }
+                Log.d(TAG, "deleteAllPending: " + new File(filePath).getName() 
+                    + ", 成功: " + result.success + ", 原因: " + result.errorMessage);
             }
             
             // 清空待删除列表
             clearAllPending();
             
-            // 在主线程回调
+            // 在主线程回调和显示结果
             final int finalSuccessCount = successCount;
+            final int finalFailCount = failCount;
+            final List<String> finalFailedFiles = new ArrayList<>(failedFiles);
+            
             mainHandler.post(() -> {
                 if (onFileDeletedListener != null) {
-                    onFileDeletedListener.onFilesDeleted(finalSuccessCount);
+                    onFileDeletedListener.onFilesDeleted(finalSuccessCount, finalFailCount, finalFailedFiles);
+                }
+                
+                // 显示删除结果
+                StringBuilder message = new StringBuilder();
+                message.append("删除完成：成功 ").append(finalSuccessCount).append(" 个");
+                if (finalFailCount > 0) {
+                    message.append("，失败 ").append(finalFailCount).append(" 个");
+                }
+                Toast.makeText(context, message.toString(), Toast.LENGTH_LONG).show();
+                
+                // 如果有失败的文件，记录详细信息
+                if (!finalFailedFiles.isEmpty()) {
+                    Log.e(TAG, "删除失败的文件：");
+                    for (String failInfo : finalFailedFiles) {
+                        Log.e(TAG, "  - " + failInfo);
+                    }
                 }
             });
         });
@@ -208,18 +238,20 @@ public class PendingDeleteManager {
             pendingFiles.remove(firstFile);
             
             // 立即删除文件
-            File file = new File(firstFile);
-            if (file.exists()) {
-                boolean deleted = file.delete();
-                Log.d(TAG, "setMaxPendingCount: 超过新的最大值，删除文件 " + file.getName() + ", 结果: " + deleted);
-                
-                // 通知监听器
-                if (deleted && onFileDeletedListener != null) {
-                    mainHandler.post(() -> onFileDeletedListener.onFileDeleted(firstFile));
-                }
-            } else {
-                Log.w(TAG, "setMaxPendingCount: 文件不存在 - " + firstFile);
+            DeleteResult result = deleteFileSync(firstFile);
+            Log.d(TAG, "setMaxPendingCount: 超过新的最大值，删除文件 " + new File(firstFile).getName() 
+                + ", 结果: " + result.success + ", 原因: " + result.errorMessage);
+            
+            // 通知监听器
+            if (onFileDeletedListener != null) {
+                final String file = firstFile;
+                final boolean success = result.success;
+                final String error = result.errorMessage;
+                mainHandler.post(() -> onFileDeletedListener.onFileDeleted(file, success, error));
             }
+            
+            // 显示删除结果
+            showDeleteResult(firstFile, result);
         }
         savePendingFiles(pendingFiles);
         Log.d(TAG, "setMaxPendingCount: 设置为 " + count + ", 当前待删除数量 = " + pendingFiles.size());
@@ -245,50 +277,126 @@ public class PendingDeleteManager {
      */
     private void deleteFileAsync(String filePath) {
         deleteExecutor.execute(() -> {
-            boolean deleted = deleteFile(filePath);
-            if (deleted) {
-                // 在主线程回调
-                mainHandler.post(() -> {
-                    if (onFileDeletedListener != null) {
-                        onFileDeletedListener.onFileDeleted(filePath);
-                    }
-                });
-            }
+            DeleteResult result = deleteFileSync(filePath);
+            // 在主线程回调
+            mainHandler.post(() -> {
+                if (onFileDeletedListener != null) {
+                    onFileDeletedListener.onFileDeleted(filePath, result.success, result.errorMessage);
+                }
+            });
         });
     }
     
     /**
-     * 删除单个文件（同步方法，在后台线程调用）
+     * 删除结果类
      */
-    private boolean deleteFile(String filePath) {
+    private static class DeleteResult {
+        boolean success;
+        String errorMessage;
+        
+        DeleteResult(boolean success, String errorMessage) {
+            this.success = success;
+            this.errorMessage = errorMessage;
+        }
+    }
+    
+    /**
+     * 删除单个文件（同步方法，在后台线程调用）
+     * @return DeleteResult 包含删除结果和错误信息
+     */
+    private DeleteResult deleteFileSync(String filePath) {
         File file = new File(filePath);
+        String fileName = file.getName();
+        
+        // 1. 检查文件是否存在
         if (!file.exists()) {
-            Log.w(TAG, "deleteFile: 文件不存在 - " + filePath);
-            return false;
+            String error = "文件不存在";
+            Log.w(TAG, "deleteFile: " + error + " - " + fileName);
+            return new DeleteResult(false, error);
         }
         
+        // 2. 检查文件是否可读
+        if (!file.canRead()) {
+            String error = "文件无法读取（权限不足）";
+            Log.e(TAG, "deleteFile: " + error + " - " + fileName);
+            return new DeleteResult(false, error);
+        }
+        
+        // 3. 检查文件是否可写（删除需要写权限）
+        if (!file.canWrite()) {
+            String error = "文件无法写入（权限不足，无法删除）";
+            Log.e(TAG, "deleteFile: " + error + " - " + fileName);
+            return new DeleteResult(false, error);
+        }
+        
+        // 4. 检查父目录是否可写
+        File parentDir = file.getParentFile();
+        if (parentDir != null && !parentDir.canWrite()) {
+            String error = "父目录无写权限";
+            Log.e(TAG, "deleteFile: " + error + " - " + fileName + " (父目录: " + parentDir.getPath() + ")");
+            return new DeleteResult(false, error);
+        }
+        
+        // 5. 尝试删除文件
         boolean deleted = false;
+        String errorMessage = null;
         
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+ 尝试使用 MediaStore API
-                // 这里简化处理，直接使用 File.delete()
-                deleted = file.delete();
-            } else {
-                // Android 9 及以下
-                deleted = file.delete();
-            }
+            deleted = file.delete();
             
             if (deleted) {
-                Log.d(TAG, "deleteFile: 删除成功 - " + file.getName());
+                Log.d(TAG, "deleteFile: ✓ 删除成功 - " + fileName);
+                return new DeleteResult(true, "删除成功");
             } else {
-                Log.e(TAG, "deleteFile: 删除失败 - " + file.getName());
+                // 删除失败，但没有抛出异常
+                errorMessage = "删除失败（可能被其他程序占用或系统保护）";
+                Log.e(TAG, "deleteFile: ✗ " + errorMessage + " - " + fileName);
+                
+                // 打印详细的文件信息以帮助调试
+                Log.e(TAG, "  文件路径: " + file.getAbsolutePath());
+                Log.e(TAG, "  文件大小: " + file.length() + " bytes");
+                Log.e(TAG, "  是否为文件: " + file.isFile());
+                Log.e(TAG, "  是否为目录: " + file.isDirectory());
+                Log.e(TAG, "  可读: " + file.canRead());
+                Log.e(TAG, "  可写: " + file.canWrite());
+                Log.e(TAG, "  可执行: " + file.canExecute());
+                
+                if (parentDir != null) {
+                    Log.e(TAG, "  父目录: " + parentDir.getAbsolutePath());
+                    Log.e(TAG, "  父目录可写: " + parentDir.canWrite());
+                }
+                
+                return new DeleteResult(false, errorMessage);
             }
+        } catch (SecurityException e) {
+            errorMessage = "安全异常：权限被拒绝 - " + e.getMessage();
+            Log.e(TAG, "deleteFile: " + errorMessage + " - " + fileName, e);
+            return new DeleteResult(false, errorMessage);
         } catch (Exception e) {
-            Log.e(TAG, "deleteFile: 删除异常 - " + file.getName(), e);
+            errorMessage = "删除异常：" + e.getClass().getSimpleName() + " - " + e.getMessage();
+            Log.e(TAG, "deleteFile: " + errorMessage + " - " + fileName, e);
+            e.printStackTrace();
+            return new DeleteResult(false, errorMessage);
         }
-        
-        return deleted;
+    }
+    
+    /**
+     * 在主线程显示删除结果
+     */
+    private void showDeleteResult(String filePath, DeleteResult result) {
+        mainHandler.post(() -> {
+            String fileName = new File(filePath).getName();
+            String message;
+            
+            if (result.success) {
+                message = "已删除: " + fileName;
+            } else {
+                message = "删除失败: " + fileName + "\n原因: " + result.errorMessage;
+            }
+            
+            Toast.makeText(context, message, 
+                result.success ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+        });
     }
     
     /**

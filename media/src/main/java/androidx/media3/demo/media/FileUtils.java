@@ -18,23 +18,17 @@ public class FileUtils {
     public static List<File> getStorageDirectories(Context context) {
         List<File> directories = new ArrayList<>();
         
-        // 内部存储（应用数据目录的父目录，通常是 /data）
-        File internalStorage = Environment.getDataDirectory();
-        if (internalStorage != null && internalStorage.exists()) {
-            directories.add(internalStorage);
+        // 1. 内部存储（手机本机存储）- 通常是 /storage/emulated/0
+        File primaryStorage = Environment.getExternalStorageDirectory();
+        if (primaryStorage != null && primaryStorage.exists()) {
+            directories.add(primaryStorage);
         }
         
-        // 外部存储（包括U盘等）
+        // 2. 外部存储（U盘、SD卡等可移动存储设备）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            directories.addAll(getStorageDirectoriesApi30(context));
+            directories.addAll(getRemovableStorageDirectoriesApi30(context));
         } else {
             // Android 10 及以下
-            File externalStorage = Environment.getExternalStorageDirectory();
-            if (externalStorage != null && externalStorage.exists()) {
-                directories.add(externalStorage);
-            }
-            
-            // 尝试获取其他存储卷（U盘等）
             directories.addAll(getRemovableStorageDirectories(context));
         }
         
@@ -42,15 +36,18 @@ public class FileUtils {
     }
     
     @RequiresApi(api = Build.VERSION_CODES.R)
-    private static List<File> getStorageDirectoriesApi30(Context context) {
+    private static List<File> getRemovableStorageDirectoriesApi30(Context context) {
         List<File> directories = new ArrayList<>();
         StorageManager storageManager = context.getSystemService(StorageManager.class);
+        File primaryStorage = Environment.getExternalStorageDirectory();
+        
         if (storageManager != null) {
             List<StorageVolume> volumes = storageManager.getStorageVolumes();
             for (StorageVolume volume : volumes) {
-                if (volume.getState().equals(Environment.MEDIA_MOUNTED)) {
+                // 只添加已挂载的、非主存储的卷（即外部设备）
+                if (volume.getState().equals(Environment.MEDIA_MOUNTED) && !volume.isPrimary()) {
                     File directory = volume.getDirectory();
-                    if (directory != null && directory.exists()) {
+                    if (directory != null && directory.exists() && !directory.equals(primaryStorage)) {
                         directories.add(directory);
                     }
                 }
@@ -60,11 +57,12 @@ public class FileUtils {
     }
     
     /**
-     * 获取可移动存储设备（U盘等）的目录
+     * 获取可移动存储设备（U盘、SD卡等）的目录
      * 适用于 Android 10 及以下版本
      */
     private static List<File> getRemovableStorageDirectories(Context context) {
         List<File> directories = new ArrayList<>();
+        File primaryStorage = Environment.getExternalStorageDirectory();
         
         // 常见的可移动存储路径
         File storageDir = new File("/storage");
@@ -72,31 +70,16 @@ public class FileUtils {
             File[] files = storageDir.listFiles();
             if (files != null) {
                 for (File file : files) {
-                    // 排除内部存储和外部存储的标准路径
                     String name = file.getName();
-                    if (!name.equals("emulated") && !name.equals("self") && file.isDirectory()) {
-                        // 检查是否是挂载的存储设备
-                        File[] subFiles = file.listFiles();
-                        if (subFiles != null && subFiles.length > 0) {
-                            directories.add(file);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 也检查 /mnt 目录（某些设备的挂载点）
-        File mntDir = new File("/mnt");
-        if (mntDir.exists() && mntDir.isDirectory()) {
-            File[] files = mntDir.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.isDirectory() && file.canRead()) {
-                        // 检查是否是外部存储设备
-                        String path = file.getAbsolutePath();
-                        if (path.contains("sdcard") || path.contains("usb") || 
-                            path.contains("external")) {
-                            directories.add(file);
+                    // 排除主存储（emulated）和系统路径
+                    if (!name.equals("emulated") && !name.equals("self") && 
+                        !name.equals("sdcard") && file.isDirectory()) {
+                        // 检查是否是挂载的存储设备且不是主存储
+                        if (file.exists() && file.canRead() && !file.equals(primaryStorage)) {
+                            File[] subFiles = file.listFiles();
+                            if (subFiles != null && subFiles.length > 0) {
+                                directories.add(file);
+                            }
                         }
                     }
                 }
@@ -143,6 +126,42 @@ public class FileUtils {
             allFiles.addAll(scanFiles(directory, filterType));
         }
         return allFiles;
+    }
+    
+    /**
+     * 判断指定目录是否是主存储（手机本机存储）
+     */
+    public static boolean isPrimaryStorage(File directory) {
+        File primaryStorage = Environment.getExternalStorageDirectory();
+        return directory.equals(primaryStorage);
+    }
+    
+    /**
+     * 判断指定目录是否是外部存储设备（U盘、SD卡等）
+     */
+    public static boolean isRemovableStorage(File directory) {
+        return !isPrimaryStorage(directory);
+    }
+    
+    /**
+     * 获取存储设备的显示名称
+     */
+    public static String getStorageDisplayName(File directory) {
+        if (isPrimaryStorage(directory)) {
+            return "内部存储";  // 手机本机存储
+        } else {
+            String path = directory.getAbsolutePath();
+            String name = directory.getName();
+            
+            // 识别常见的外部设备类型
+            if (name.toUpperCase().contains("USB") || path.contains("usb")) {
+                return "U盘";
+            } else if (name.toLowerCase().contains("sdcard") || name.toUpperCase().contains("SD")) {
+                return "SD卡";
+            } else {
+                return "外部存储";
+            }
+        }
     }
     
     public static StorageInfo getStorageInfo(File directory) {

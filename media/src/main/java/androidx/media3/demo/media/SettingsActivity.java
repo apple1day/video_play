@@ -39,22 +39,26 @@ public class SettingsActivity extends AppCompatActivity {
         // 设置监听器
         pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
             @Override
-            public void onFileDeleted(String filePath) {
+            public void onFileDeleted(String filePath, boolean success, String errorMessage) {
                 // 自动删除时显示提示
                 runOnUiThread(() -> {
-                    Toast.makeText(SettingsActivity.this, 
-                        "已自动删除文件", 
-                        Toast.LENGTH_SHORT).show();
+                    String fileName = new File(filePath).getName();
+                    String message;
+                    if (success) {
+                        message = "✓ 已删除: " + fileName;
+                        Toast.makeText(SettingsActivity.this, message, Toast.LENGTH_SHORT).show();
+                    } else {
+                        message = "✗ 删除失败: " + fileName + "\n" + errorMessage;
+                        Toast.makeText(SettingsActivity.this, message, Toast.LENGTH_LONG).show();
+                    }
                 });
             }
             
             @Override
-            public void onFilesDeleted(int count) {
-                // 批量删除时显示提示
+            public void onFilesDeleted(int successCount, int failCount, List<String> failedFiles) {
+                // 批量删除时显示提示（此方法已在PendingDeleteManager中直接显示Toast）
                 runOnUiThread(() -> {
-                    Toast.makeText(SettingsActivity.this, 
-                        "已删除 " + count + " 个文件", 
-                        Toast.LENGTH_SHORT).show();
+                    updatePendingCountDisplay();
                 });
             }
         });
@@ -136,22 +140,29 @@ public class SettingsActivity extends AppCompatActivity {
     }
     
     private String getStorageTitle(File directory) {
-        File dataDir = Environment.getDataDirectory();
-        File externalStorage = Environment.getExternalStorageDirectory();
+        // 主存储（手机本机存储）
+        File primaryStorage = Environment.getExternalStorageDirectory();
         
-        if (directory.equals(dataDir)) {
-            return getString(R.string.internal_storage);
-        } else if (directory.equals(externalStorage)) {
-            return getString(R.string.external_storage);
+        if (directory.equals(primaryStorage)) {
+            return getString(R.string.internal_storage);  // 内部存储 = 手机本机
         } else {
+            // 外部存储设备（U盘、SD卡等）
             String path = directory.getAbsolutePath();
             if (path.contains("/storage/")) {
                 String[] parts = path.split("/");
                 if (parts.length > 2) {
-                    return "外置存储: " + parts[parts.length - 1];
+                    String deviceName = parts[parts.length - 1];
+                    // 识别常见的外部设备类型
+                    if (deviceName.toUpperCase().contains("USB")) {
+                        return "U盘: " + deviceName;
+                    } else if (deviceName.contains("sdcard") || deviceName.contains("SD")) {
+                        return "SD卡: " + deviceName;
+                    } else {
+                        return getString(R.string.external_storage) + ": " + deviceName;
+                    }
                 }
             }
-            return "存储设备: " + directory.getName();
+            return getString(R.string.external_storage) + ": " + directory.getName();
         }
     }
     

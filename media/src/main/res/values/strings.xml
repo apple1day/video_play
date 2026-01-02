@@ -15,7 +15,7 @@
     <string name="total_space">总空间</string>
     <string name="used_space">已用空间</string>
     <string name="free_space">可用空间</string>
-    <string name="internal_storage">内部存储</string>
+    <string name="internal_storage">内部存储（手机）</string>
     <string name="external_storage">外部存储</string>
     <string name="no_files">没有找到文件</string>
     <string name="loading">加载中...</string>
@@ -44,8 +44,8 @@
     <string name="previous_video">上一个视频</string>
     <string name="last_video">已经是最后一个视频了</string>
     <string name="first_video">已经是第一个视频了</string>
-    <string name="storage_internal">内部</string>
-    <string name="storage_external">外部</string>
+    <string name="storage_internal">内部（手机）</string>
+    <string name="storage_external">外部（U盘/SD卡）</string>
     <string name="storage_label">存储:</string>
     <string name="file_browser">文件浏览器</string>
 </resources>

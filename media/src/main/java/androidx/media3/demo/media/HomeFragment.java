@@ -142,20 +142,18 @@ public class HomeFragment extends Fragment {
         pendingDeleteManager = PendingDeleteManager.getInstance(getContext());
         pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
             @Override
-            public void onFileDeleted(String filePath) {
+            public void onFileDeleted(String filePath, boolean success, String errorMessage) {
                 // 单个文件删除后刷新列表
-                Log.d(TAG, "onFileDeleted: " + filePath);
+                Log.d(TAG, "onFileDeleted: " + filePath + ", success=" + success + ", error=" + errorMessage);
                 refreshFiles();
             }
             
             @Override
-            public void onFilesDeleted(int count) {
+            public void onFilesDeleted(int successCount, int failCount, List<String> failedFiles) {
                 // 批量删除后刷新列表
-                Log.d(TAG, "onFilesDeleted: " + count);
+                Log.d(TAG, "onFilesDeleted: success=" + successCount + ", fail=" + failCount);
                 refreshFiles();
-                Toast.makeText(getContext(), 
-                    getString(R.string.delete_success) + " (" + count + ")", 
-                    Toast.LENGTH_SHORT).show();
+                // Toast提示已在PendingDeleteManager中显示
             }
         });
 

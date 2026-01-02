@@ -1,5 +1,7 @@
 package androidx.media3.demo.media;
 
+import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,14 +21,28 @@ public class FileBrowserAdapter extends RecyclerView.Adapter<FileBrowserAdapter.
 
     private List<FileItem> files = new ArrayList<>();
     private OnItemClickListener listener;
+    private OnItemLongClickListener longClickListener;
+    private FavoriteManager favoriteManager;
+    private PendingDeleteManager pendingDeleteManager;
 
     public interface OnItemClickListener {
         void onItemClick(FileItem item);
     }
+    
+    public interface OnItemLongClickListener {
+        boolean onItemLongClick(FileItem item);
+    }
 
-    public FileBrowserAdapter(List<FileItem> files, OnItemClickListener listener) {
+    public FileBrowserAdapter(List<FileItem> files, OnItemClickListener listener, 
+                             FavoriteManager favoriteManager, PendingDeleteManager pendingDeleteManager) {
         this.files = files;
         this.listener = listener;
+        this.favoriteManager = favoriteManager;
+        this.pendingDeleteManager = pendingDeleteManager;
+    }
+    
+    public void setOnItemLongClickListener(OnItemLongClickListener listener) {
+        this.longClickListener = listener;
     }
 
     public void updateFiles(List<FileItem> newFiles) {
@@ -61,18 +77,30 @@ public class FileBrowserAdapter extends RecyclerView.Adapter<FileBrowserAdapter.
         private ImageView icon;
         private TextView fileName;
         private TextView fileInfo;
+        private ImageView favoriteIcon;
+        private ImageView pendingDeleteIcon;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
             icon = itemView.findViewById(R.id.icon);
             fileName = itemView.findViewById(R.id.file_name);
             fileInfo = itemView.findViewById(R.id.file_info);
+            favoriteIcon = itemView.findViewById(R.id.favorite_icon);
+            pendingDeleteIcon = itemView.findViewById(R.id.pending_delete_icon);
 
             itemView.setOnClickListener(v -> {
                 int position = getAdapterPosition();
                 if (position != RecyclerView.NO_POSITION && listener != null) {
                     listener.onItemClick(files.get(position));
                 }
+            });
+            
+            itemView.setOnLongClickListener(v -> {
+                int position = getAdapterPosition();
+                if (position != RecyclerView.NO_POSITION && longClickListener != null) {
+                    return longClickListener.onItemLongClick(files.get(position));
+                }
+                return false;
             });
         }
 
@@ -85,6 +113,10 @@ public class FileBrowserAdapter extends RecyclerView.Adapter<FileBrowserAdapter.
                 // 显示文件夹信息：修改时间
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
                 fileInfo.setText("文件夹 • " + sdf.format(new Date(item.getLastModified())));
+                
+                // 文件夹不显示收藏和待删除标记
+                favoriteIcon.setVisibility(View.GONE);
+                pendingDeleteIcon.setVisibility(View.GONE);
             } else {
                 // 根据文件类型显示不同图标
                 switch (item.getFileType()) {
@@ -108,6 +140,23 @@ public class FileBrowserAdapter extends RecyclerView.Adapter<FileBrowserAdapter.
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
                 info.append(sdf.format(new Date(item.getLastModified())));
                 fileInfo.setText(info.toString());
+                
+                // 显示收藏标记
+                String filePath = item.getFile().getAbsolutePath();
+                if (favoriteManager != null && favoriteManager.isFavorite(filePath)) {
+                    favoriteIcon.setVisibility(View.VISIBLE);
+                    favoriteIcon.setColorFilter(Color.parseColor("#FFD700"), PorterDuff.Mode.SRC_IN);
+                } else {
+                    favoriteIcon.setVisibility(View.GONE);
+                }
+                
+                // 显示待删除标记
+                if (pendingDeleteManager != null && pendingDeleteManager.isPendingDelete(filePath)) {
+                    pendingDeleteIcon.setVisibility(View.VISIBLE);
+                    pendingDeleteIcon.setColorFilter(Color.parseColor("#FF6B6B"), PorterDuff.Mode.SRC_IN);
+                } else {
+                    pendingDeleteIcon.setVisibility(View.GONE);
+                }
             }
         }
     }

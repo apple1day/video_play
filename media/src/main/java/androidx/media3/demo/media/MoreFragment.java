@@ -15,6 +15,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -35,6 +36,8 @@ public class MoreFragment extends Fragment {
     private File currentDirectory;
     private List<File> directoryHistory = new ArrayList<>();
     private List<File> storageRoots = new ArrayList<>();
+    private FavoriteManager favoriteManager;
+    private PendingDeleteManager pendingDeleteManager;
 
     @Nullable
     @Override
@@ -46,6 +49,29 @@ public class MoreFragment extends Fragment {
         backButton = view.findViewById(R.id.back_button);
         settingsButton = view.findViewById(R.id.settings_button);
 
+        // 初始化管理器
+        favoriteManager = FavoriteManager.getInstance(getContext());
+        pendingDeleteManager = PendingDeleteManager.getInstance(getContext());
+        
+        // 设置文件删除监听器
+        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+            @Override
+            public void onFileDeleted(String filePath, boolean success, String errorMessage) {
+                // 文件删除后刷新列表
+                if (success && getActivity() != null) {
+                    getActivity().runOnUiThread(() -> refreshCurrentDirectory());
+                }
+            }
+            
+            @Override
+            public void onFilesDeleted(int successCount, int failCount, List<String> failedFiles) {
+                // 批量删除后刷新列表
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> refreshCurrentDirectory());
+                }
+            }
+        });
+
         adapter = new FileBrowserAdapter(new ArrayList<>(), item -> {
             if (item.isDirectory()) {
                 navigateToDirectory(item.getFile());
@@ -53,6 +79,14 @@ public class MoreFragment extends Fragment {
                 // 处理文件点击
                 handleFileClick(item);
             }
+        }, favoriteManager, pendingDeleteManager);
+        
+        // 设置长按监听器
+        adapter.setOnItemLongClickListener(item -> {
+            if (!item.isDirectory()) {
+                showFileOptionsDialog(item);
+            }
+            return true;
         });
 
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
@@ -145,6 +179,142 @@ public class MoreFragment extends Fragment {
     }
     
     /**
+     * 显示文件选项对话框
+     */
+    private void showFileOptionsDialog(FileItem item) {
+        if (getContext() == null) return;
+        
+        File file = item.getFile();
+        String filePath = file.getAbsolutePath();
+        
+        boolean isFavorite = favoriteManager.isFavorite(filePath);
+        boolean isPendingDelete = pendingDeleteManager.isPendingDelete(filePath);
+        
+        // 创建选项列表
+        List<String> options = new ArrayList<>();
+        options.add(isFavorite ? "取消收藏" : "收藏");
+        options.add(isPendingDelete ? "取消待删除" : "标记待删除");
+        options.add("立即删除");
+        options.add("查看信息");
+        
+        new AlertDialog.Builder(getContext())
+            .setTitle(item.getName())
+            .setItems(options.toArray(new String[0]), (dialog, which) -> {
+                switch (which) {
+                    case 0: // 收藏/取消收藏
+                        toggleFavorite(filePath);
+                        break;
+                    case 1: // 标记待删除/取消待删除
+                        togglePendingDelete(filePath);
+                        break;
+                    case 2: // 立即删除
+                        confirmAndDeleteFile(item);
+                        break;
+                    case 3: // 查看信息
+                        showFileInfo(item);
+                        break;
+                }
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 切换收藏状态
+     */
+    private void toggleFavorite(String filePath) {
+        boolean isFavorited = favoriteManager.toggleFavorite(filePath);
+        String message = isFavorited ? "已收藏" : "已取消收藏";
+        Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show();
+        adapter.notifyDataSetChanged();
+    }
+    
+    /**
+     * 切换待删除状态
+     */
+    private void togglePendingDelete(String filePath) {
+        boolean isPending = pendingDeleteManager.togglePendingDelete(filePath);
+        String message = isPending ? "已标记为待删除" : "已取消待删除";
+        Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show();
+        adapter.notifyDataSetChanged();
+    }
+    
+    /**
+     * 确认并删除文件
+     */
+    private void confirmAndDeleteFile(FileItem item) {
+        if (getContext() == null) return;
+        
+        new AlertDialog.Builder(getContext())
+            .setTitle("确认删除")
+            .setMessage("确定要删除 \"" + item.getName() + "\" 吗？\n此操作无法撤销。")
+            .setPositiveButton("删除", (dialog, which) -> deleteFileAsync(item))
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 异步删除文件
+     */
+    private void deleteFileAsync(FileItem item) {
+        if (getContext() == null) return;
+        
+        File file = item.getFile();
+        String fileName = file.getName();
+        
+        // 显示删除中提示
+        Toast.makeText(getContext(), "正在删除 " + fileName + "...", Toast.LENGTH_SHORT).show();
+        
+        // 在后台线程删除文件
+        new Thread(() -> {
+            boolean success = false;
+            String errorMessage = null;
+            
+            try {
+                if (file.exists()) {
+                    if (!file.canWrite()) {
+                        errorMessage = "文件无写权限";
+                    } else if (file.getParentFile() != null && !file.getParentFile().canWrite()) {
+                        errorMessage = "父目录无写权限";
+                    } else {
+                        success = file.delete();
+                        if (!success) {
+                            errorMessage = "删除失败（可能被占用或系统保护）";
+                        }
+                    }
+                } else {
+                    errorMessage = "文件不存在";
+                }
+            } catch (SecurityException e) {
+                errorMessage = "安全异常：" + e.getMessage();
+            } catch (Exception e) {
+                errorMessage = "删除异常：" + e.getMessage();
+            }
+            
+            // 在主线程更新UI
+            final boolean finalSuccess = success;
+            final String finalError = errorMessage;
+            
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(() -> {
+                    if (finalSuccess) {
+                        Toast.makeText(getContext(), "✓ 已删除: " + fileName, Toast.LENGTH_SHORT).show();
+                        // 从收藏和待删除列表中移除
+                        favoriteManager.removeFavorite(file.getAbsolutePath());
+                        pendingDeleteManager.removePendingDelete(file.getAbsolutePath());
+                        // 刷新列表
+                        refreshCurrentDirectory();
+                    } else {
+                        Toast.makeText(getContext(), 
+                            "✗ 删除失败: " + fileName + "\n" + finalError, 
+                            Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        }).start();
+    }
+    
+    /**
      * 获取文件类型字符串
      */
     private String getFileTypeString(FileItem.FileType type) {
@@ -163,6 +333,26 @@ public class MoreFragment extends Fragment {
             } else {
                 loadRootDirectories();
             }
+        }
+    }
+    
+    /**
+     * 刷新当前目录（用于文件删除后）
+     */
+    private void refreshCurrentDirectory() {
+        if (currentDirectory != null) {
+            navigateToDirectory(currentDirectory, false);
+        } else {
+            loadRootDirectories();
+        }
+    }
+    
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        // 移除监听器
+        if (pendingDeleteManager != null) {
+            pendingDeleteManager.setOnFileDeletedListener(null);
         }
     }
 
