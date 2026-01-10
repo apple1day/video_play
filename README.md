@@ -1,180 +1,207 @@
-# AndroidX Media
+# 小熊播放器 🐻
 
-AndroidX Media is a collection of libraries for implementing media use cases on
-Android, including local playback (via ExoPlayer), video editing (via Transformer) and media sessions.
+一个基于 AndroidX Media3 (ExoPlayer) 的简洁视频播放器应用。
 
-## Documentation
+## 项目简介
 
-*   The [developer guide][] provides a wealth of information.
-*   The [class reference][] documents the classes and methods.
-*   The [release notes][] document the major changes in each release.
-*   The [media dev center][] provides samples and guidelines.
-*   Follow our [developer blog][] to keep up to date with the latest
-    developments!
+**小熊播放器** 是一个专注于本地视频播放的Android应用，提供流畅的播放体验和智能的视频管理功能。
 
-[developer guide]: https://developer.android.com/guide/topics/media/media3
-[class reference]: https://developer.android.com/reference/androidx/media3/common/package-summary
-[release notes]: RELEASENOTES.md
-[media dev center]: https://developer.android.com/media
-[developer blog]: https://medium.com/google-exoplayer
+### 应用信息
+- **应用名称**: 小熊播放器
+- **包名**: com.anxiong666.www
+- **当前版本**: 3.0.2.6 (versionCode: 3026)
+- **最低支持**: Android 7.1 (API 25)
+- **目标版本**: Android 14 (API 36)
 
-## Migration for existing ExoPlayer and MediaSession projects
+## 核心功能
 
-You'll find a [migration guide for existing ExoPlayer and MediaSession users][]
-on developer.android.com.
+### 🎬 视频播放
+- 基于ExoPlayer的高性能播放引擎
+- 支持多种视频格式
+- 流畅的播放控制
 
-[migration guide for existing ExoPlayer and MediaSession users]: https://developer.android.com/guide/topics/media/media3/getting-started/migration-guide
+### ⭐ 智能管理
+- **收藏功能**: 标记喜爱的视频，快速访问
+- **待删除队列**: 智能管理待删除视频（可配置1-20个）
+- **批量操作**: 支持批量选择和删除
 
-## API stability
+### 📱 用户界面
+- 简洁直观的列表展示
+- 时间/大小双向排序
+- 下拉刷新
+- 多选模式支持
 
-AndroidX Media releases provide API stability guarantees, ensuring that the API
-surface remains backwards compatible for the most commonly used APIs. APIs
-intended for more advanced use cases are marked as unstable. To use an unstable
-method or class without lint warnings, you’ll need to add the OptIn annotation
-before using it. For more information see the [UnstableApi][] documentation.
+## 项目结构
 
-[UnstableApi]: https://github.com/androidx/media/blob/main/libraries/common/src/main/java/androidx/media3/common/util/UnstableApi.java
-
-## Using the libraries
-
-You can get the libraries from [the Google Maven repository][]. It's
-also possible to clone this GitHub repository and depend on the modules locally.
-
-[the Google Maven repository]: https://developer.android.com/studio/build/dependencies#google-maven
-
-### From the Google Maven repository
-
-#### 1. Add module dependencies
-
-The easiest way to get started using AndroidX Media is to add gradle
-dependencies on the libraries you need in the `build.gradle.kts` file of your
-app module.
-
-For example, to depend on ExoPlayer with DASH playback support and UI components
-you can add dependencies on the modules like this:
-
-```kotlin
-implementation("androidx.media3:media3-exoplayer:1.X.X")
-implementation("androidx.media3:media3-exoplayer-dash:1.X.X")
-implementation("androidx.media3:media3-ui:1.X.X")
+```
+codebuddy_media/
+├── media/                      # 📱 Android应用代码
+│   ├── src/main/
+│   │   ├── java/              # Java源代码
+│   │   │   └── androidx/media3/demo/media/
+│   │   │       ├── MainActivity.java
+│   │   │       ├── HomeFragment.java
+│   │   │       ├── PlayerActivity.java
+│   │   │       ├── SettingsActivity.java
+│   │   │       ├── FavoriteManager.java
+│   │   │       ├── PendingDeleteManager.java
+│   │   │       └── ...
+│   │   ├── res/               # 资源文件
+│   │   └── AndroidManifest.xml
+│   ├── build.gradle
+│   └── README.md
+│
+├── libraries/                  # 📚 ExoPlayer库
+│   ├── lib-common/
+│   ├── lib-exoplayer/
+│   └── lib-ui/
+│
+├── build.gradle               # 项目构建配置
+├── settings.gradle
+└── README.md                  # 本文件
 ```
 
-Or in Gradle Groovy DSL `build.gradle`:
+## 快速开始
+
+### 环境要求
+
+- Android Studio Arctic Fox 或更高版本
+- JDK 17
+- Android SDK API 36
+- Gradle 8.0+
+
+### 构建步骤
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/your-repo/codebuddy_media.git
+cd codebuddy_media
+
+# 2. 清理构建缓存
+./gradlew clean
+
+# 3. 构建Debug版本
+./gradlew :media:assembleDebug
+
+# 4. 安装到设备（需连接设备或启动模拟器）
+./gradlew :media:installDebug
+
+# 5. 构建Release版本（需配置签名）
+./gradlew :media:assembleRelease
+```
+
+### 签名配置
+
+在项目根目录创建 `keystore.properties` 文件：
+
+```properties
+storeFile=path/to/your/keystore.jks
+storePassword=your_store_password
+keyAlias=your_key_alias
+keyPassword=your_key_password
+```
+
+## 主要依赖
 
 ```groovy
-implementation 'androidx.media3:media3-exoplayer:1.X.X'
-implementation 'androidx.media3:media3-exoplayer-dash:1.X.X'
-implementation 'androidx.media3:media3-ui:1.X.X'
+// AndroidX核心库
+implementation 'androidx.appcompat:appcompat:1.6.1'
+implementation 'com.google.android.material:material:1.11.0'
+implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+
+// ExoPlayer - 本地依赖
+implementation project(':lib-exoplayer')
+implementation project(':lib-ui')
 ```
 
-where `1.X.X` is your preferred version. All modules must be the same version.
+## 权限说明
 
-Please see the [AndroidX Media3 developer.android.com page][] for more
-information, including a full list of library modules.
+应用需要以下权限：
 
-This repository includes some modules that depend on external libraries that
-need to be built manually, and are not available from the Maven repository.
-Please see the individual READMEs under the [libraries directory][] for more
-details.
+- **READ_MEDIA_VIDEO** (Android 13+): 读取视频文件
+- **READ_EXTERNAL_STORAGE** (Android 12-): 读取外部存储
+- **MANAGE_EXTERNAL_STORAGE**: 文件删除操作
 
-[AndroidX Media3 developer.android.com page]: https://developer.android.com/jetpack/androidx/releases/media3#declaring_dependencies
-[libraries directory]: libraries
+## 使用指南
 
-#### 2. Turn on Java 8 support
+### 基本操作
 
-If not enabled already, you also need to turn on Java 8 support in all
-`build.gradle.kts` files depending on AndroidX Media, by adding the following to
-the `android` section:
+1. **浏览视频**: 启动应用后自动扫描设备视频
+2. **播放视频**: 点击列表中的视频开始播放
+3. **收藏视频**: 点击收藏图标标记喜爱的视频
+4. **标记待删除**: 长按视频或点击待删除按钮
 
-```kotlin
-compileOptions {
-  targetCompatibility = JavaVersion.VERSION_1_8
-}
-```
+### 批量操作
 
-Or in Gradle Groovy DSL `build.gradle`:
+1. 长按任意视频进入多选模式
+2. 选择需要操作的视频
+3. 点击底部操作按钮执行批量删除
 
-```groovy
-compileOptions {
-  targetCompatibility JavaVersion.VERSION_1_8
-}
-```
+### 待删除管理
 
-### Locally
+- 进入设置页面可配置待删除队列大小（1-20个）
+- 队列满时自动删除最早标记的文件
+- 可随时查看和管理待删除列表
 
-Cloning the repository and depending on the modules locally is required when
-using some libraries. It's also a suitable approach if you want to make local
-changes, or if you want to use the `main` branch.
+## 进一步优化
 
-First, clone the repository into a local directory:
+查看 [Android项目清理方案.md](Android项目清理方案.md) 了解如何进一步简化代码：
 
-```sh
-git clone https://github.com/androidx/media.git
-```
+- 移除"更多"Tab和文件浏览器
+- 简化HomeFragment功能
+- 精简SettingsActivity
+- 专注核心视频播放功能
 
-Next, add the following to your project's `settings.gradle.kts` file, replacing
-`path/to/media` with the path to your local copy:
+预计可减少约50%的代码量。
 
-```kotlin
-(gradle as ExtensionAware).extra["androidxMediaModulePrefix"] = "media3-"
-apply(from = file("path/to/media/core_settings.gradle"))
-```
+## 技术栈
 
-Or in Gradle Groovy DSL `settings.gradle`:
+- **UI框架**: Material Design Components
+- **视频播放**: AndroidX Media3 (ExoPlayer)
+- **架构模式**: Fragment + Activity
+- **数据持久化**: SharedPreferences
+- **异步处理**: Thread + Handler / ExecutorService
 
-```groovy
-gradle.ext.androidxMediaModulePrefix = 'media3-'
-apply from: file("path/to/media/core_settings.gradle")
-```
+## 版本历史
 
-You should now see the AndroidX Media modules appear as part of your project.
-You can depend on them from `build.gradle.kts` as you would on any other local
-module, for example:
+### v3.0.2.6 (2026-01-03)
+- ✅ 待删除功能完善
+- ✅ 批量删除支持
+- ✅ 收藏管理优化
+- ✅ UI界面改进
 
-```kotlin
-implementation(project(":media3-lib-exoplayer"))
-implementation(project(":media3-lib-exoplayer-dash"))
-implementation(project(":media3-lib-ui"))
-```
+### v3.0.2.3
+- 待删除队列功能
+- 播放器界面优化
+- 自动切换下一视频
 
-Or in Gradle Groovy DSL `build.gradle`:
+## 开发计划
 
-```groovy
-implementation project(':media3-lib-exoplayer')
-implementation project(':media3-lib-exoplayer-dash')
-implementation project(':media3-lib-ui')
-```
+### 短期计划
+- [ ] 添加视频缩略图
+- [ ] 优化扫描性能
+- [ ] 支持播放历史
 
-#### MIDI module
+### 长期计划
+- [ ] 播放速度调节
+- [ ] 手势控制音量/亮度
+- [ ] 搜索功能
+- [ ] 暗黑模式
 
-By default the [MIDI module](libraries/decoder_midi) is disabled as a local
-dependency, because it requires additional Maven repository config. If you want
-to use it as a local dependency, please configure the JitPack repository as
-[described in the module README](libraries/decoder_midi/README.md#getting-the-module),
-and then enable building the module in your `settings.gradle.kts` file:
+## 贡献指南
 
-```kotlin
-gradle.extra.apply {
-  set("androidxMediaEnableMidiModule", true)
-}
-```
+欢迎提交Issue和Pull Request！
 
-Or in Gradle Groovy DSL `settings.gradle`:
+## 许可证
 
-```groovy
-gradle.ext.androidxMediaEnableMidiModule = true
-```
+基于 [Apache License 2.0](LICENSE) 开源。
 
-## Developing AndroidX Media
+## 联系方式
 
-#### Project branches
+- 项目主页: https://github.com/your-repo/codebuddy_media
+- Issue反馈: https://github.com/your-repo/codebuddy_media/issues
 
-Development work happens on the `main` branch. Pull requests should normally be
-made to this branch.
+---
 
-The `release` branch holds the most recent stable release.
-
-#### Using Android Studio
-
-To develop AndroidX Media using Android Studio, simply open the project in the
-root directory of this repository.
+**基于 AndroidX Media3 开发**  
+更多信息请访问 [AndroidX Media 官方文档](https://developer.android.com/guide/topics/media/media3)
