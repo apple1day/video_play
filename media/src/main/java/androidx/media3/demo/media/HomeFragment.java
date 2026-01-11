@@ -260,7 +260,6 @@ public class HomeFragment extends Fragment {
                         isInternalStorage = (position == 0);
                         loadFiles(false); // 使用缓存
                     }
-                    }
                     
                     @Override
                     public void onNothingSelected(AdapterView<?> parent) {
