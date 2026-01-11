@@ -15,22 +15,6 @@
         android:queryHint="搜索视频..."
         android:background="@android:drawable/edit_text" />
 
-    <!-- 浏览全部视频按钮 -->
-    <Button
-        android:id="@+id/browse_all_videos_button"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        android:text="@string/browse_all_videos"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:drawableStart="@android:drawable/ic_menu_gallery"
-        android:drawablePadding="8dp"
-        android:padding="16dp"
-        android:background="@android:color/holo_blue_light"
-        android:textColor="@android:color/white"
-        android:elevation="4dp" />
-
     <!-- 工具栏区域 - 使用垂直布局支持多行 -->
     <LinearLayout
         android:id="@+id/toolbar_layout"

@@ -57,7 +57,6 @@ public class HomeFragment extends Fragment {
     private Button sortSizeButton;
     private Button viewToggleButton;
     private Button smartFilterButton;
-    private Button browseAllVideosButton;
     private View toolbarLayout;
     private View selectionToolbarLayout;
     private Button selectAllButton;
@@ -79,6 +78,7 @@ public class HomeFragment extends Fragment {
     private ExecutorService deleteExecutor;
     private Handler mainHandler;
     private PendingDeleteManager pendingDeleteManager;
+    private FileListCacheManager cacheManager;
     
     // 存储相关
     private List<File> storageDirectories = new ArrayList<>();
@@ -104,7 +104,6 @@ public class HomeFragment extends Fragment {
         sortSizeButton = view.findViewById(R.id.sort_size_button);
         viewToggleButton = view.findViewById(R.id.view_toggle_button);
         smartFilterButton = view.findViewById(R.id.smart_filter_button);
-        browseAllVideosButton = view.findViewById(R.id.browse_all_videos_button);
         toolbarLayout = view.findViewById(R.id.toolbar_layout);
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
         selectAllButton = view.findViewById(R.id.select_all_button);
@@ -148,11 +147,13 @@ public class HomeFragment extends Fragment {
         setupViewToggleButton();
         setupSmartFilterButton();
         setupSelectionButtons();
-        setupBrowseAllVideosButton();
         
         // 初始化删除线程池和主线程Handler
         deleteExecutor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
+        
+        // 初始化缓存管理器
+        cacheManager = FileListCacheManager.getInstance(getContext());
         
         // 初始化待删除管理器并设置监听器
         pendingDeleteManager = PendingDeleteManager.getInstance(getContext());
@@ -214,8 +215,10 @@ public class HomeFragment extends Fragment {
         );
         
         swipeRefreshLayout.setOnRefreshListener(() -> {
-            // 下拉刷新时重新加载文件
-            refreshFiles();
+            // 下拉刷新时清除缓存并重新加载文件
+            cacheManager.clearCache();
+            Toast.makeText(getContext(), "正在刷新视频列表...", Toast.LENGTH_SHORT).show();
+            loadFiles(true); // 强制重新扫描
         });
     }
     
@@ -255,7 +258,8 @@ public class HomeFragment extends Fragment {
                     @Override
                     public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                         isInternalStorage = (position == 0);
-                        loadFiles();
+                        loadFiles(false); // 使用缓存
+                    }
                     }
                     
                     @Override
@@ -377,20 +381,6 @@ public class HomeFragment extends Fragment {
             isGridView = !isGridView;
             updateViewToggleButton();
             switchLayoutManager();
-        });
-    }
-    
-    private void setupBrowseAllVideosButton() {
-        browseAllVideosButton.setOnClickListener(v -> {
-            // 检查权限
-            if (!PermissionHelper.hasMediaPermissions(getActivity())) {
-                PermissionHelper.requestMediaPermissions(getActivity());
-                return;
-            }
-            
-            // 打开全部视频页面
-            Intent intent = new Intent(getContext(), AllVideosActivity.class);
-            startActivity(intent);
         });
     }
     
@@ -573,12 +563,48 @@ public class HomeFragment extends Fragment {
 
     public void refreshFiles() {
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
-            loadFiles();
+            loadFiles(false); // 使用缓存
         }
     }
 
     private void loadFiles() {
-        // 显示加载提示
+        loadFiles(false); // 默认使用缓存
+    }
+
+    private void loadFiles(boolean forceRefresh) {
+        // 如果不是强制刷新，先尝试从缓存加载
+        if (!forceRefresh) {
+            List<FileItem> cachedFiles = cacheManager.loadFileList(isInternalStorage);
+            if (cachedFiles != null && !cachedFiles.isEmpty()) {
+                Log.d(TAG, "使用缓存数据: " + cachedFiles.size() + " 个文件");
+                
+                // 隐藏加载提示
+                if (loadingView != null) {
+                    loadingView.setVisibility(View.GONE);
+                }
+                
+                allVideoFiles = new ArrayList<>();
+                for (FileItem item : cachedFiles) {
+                    if (item.getFileType() == FileItem.FileType.VIDEO) {
+                        allVideoFiles.add(item);
+                    }
+                }
+                // 对视频列表按时间排序
+                Collections.sort(allVideoFiles, (o1, o2) -> Long.compare(o2.getLastModified(), o1.getLastModified()));
+                
+                allFiles = cachedFiles;
+                applyFilterAndSort();
+                
+                // 停止刷新动画
+                if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
+                    swipeRefreshLayout.setRefreshing(false);
+                }
+                
+                return;
+            }
+        }
+        
+        // 缓存无效或强制刷新，显示加载提示
         if (loadingView != null) {
             loadingView.setVisibility(View.VISIBLE);
             emptyView.setVisibility(View.GONE);
@@ -624,6 +650,10 @@ public class HomeFragment extends Fragment {
             new Handler(Looper.getMainLooper()).post(() -> {
                 allVideoFiles = allVideos; // 保存所有视频文件（已排序）
                 allFiles = files; // 保存当前筛选的文件
+                
+                // 保存到缓存
+                cacheManager.saveFileList(files, isInternalStorage);
+                
                 applyFilterAndSort();
                 
                 // 隐藏加载提示
@@ -635,6 +665,8 @@ public class HomeFragment extends Fragment {
                 if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
                     swipeRefreshLayout.setRefreshing(false);
                 }
+                
+                Toast.makeText(getContext(), "已加载 " + files.size() + " 个文件", Toast.LENGTH_SHORT).show();
             });
         }).start();
     }

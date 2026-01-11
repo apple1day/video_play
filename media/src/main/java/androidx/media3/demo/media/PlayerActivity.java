@@ -4,12 +4,15 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.GestureDetector;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -41,6 +44,15 @@ public class PlayerActivity extends AppCompatActivity {
     private GestureDetector gestureDetector;
     private TextView seekOverlay;
     private View gestureHintOverlay;
+    private AudioManager audioManager;
+    
+    // 手势控制相关变量
+    private float startX;
+    private float startY;
+    private int startVolume;
+    private float startBrightness;
+    private boolean isAdjustingVolume = false;
+    private boolean isAdjustingBrightness = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +66,7 @@ public class PlayerActivity extends AppCompatActivity {
         favoriteManager = FavoriteManager.getInstance(this);
         pendingDeleteManager = PendingDeleteManager.getInstance(this);
         playHistoryManager = PlayHistoryManager.getInstance(this);
+        audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         
         Intent intent = getIntent();
         currentFilePath = intent.getStringExtra("file_path");
@@ -102,6 +115,12 @@ public class PlayerActivity extends AppCompatActivity {
         if (!hasShownHint && gestureHintOverlay != null) {
             gestureHintOverlay.setVisibility(View.VISIBLE);
             
+            // 点击提示层任意位置关闭
+            gestureHintOverlay.setOnClickListener(v -> {
+                gestureHintOverlay.setVisibility(View.GONE);
+                prefs.edit().putBoolean("gesture_hint_shown", true).apply();
+            });
+            
             View closeButton = gestureHintOverlay.findViewById(R.id.close_hint_button);
             if (closeButton != null) {
                 closeButton.setOnClickListener(v -> {
@@ -109,22 +128,11 @@ public class PlayerActivity extends AppCompatActivity {
                     prefs.edit().putBoolean("gesture_hint_shown", true).apply();
                 });
             }
-            
-            // 5秒后自动关闭
-            gestureHintOverlay.postDelayed(() -> {
-                if (gestureHintOverlay != null) {
-                    gestureHintOverlay.setVisibility(View.GONE);
-                    prefs.edit().putBoolean("gesture_hint_shown", true).apply();
-                }
-            }, 5000);
         }
     }
     
     private void setupGestureDetector() {
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            private static final int SWIPE_THRESHOLD = 100;
-            private static final int SWIPE_VELOCITY_THRESHOLD = 100;
-            
             @Override
             public boolean onDoubleTap(MotionEvent e) {
                 // 双击快进/快退
@@ -153,6 +161,28 @@ public class PlayerActivity extends AppCompatActivity {
             }
             
             @Override
+            public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+                if (e1 == null || e2 == null) {
+                    return false;
+                }
+                
+                int screenWidth = playerView.getWidth();
+                float startX = e1.getX();
+                float deltaY = e1.getY() - e2.getY(); // 正值表示向上滑动
+                
+                // 判断是左侧还是右侧
+                if (startX < screenWidth / 2) {
+                    // 左侧 - 调节亮度
+                    adjustBrightness(deltaY);
+                } else {
+                    // 右侧 - 调节音量
+                    adjustVolume(deltaY);
+                }
+                
+                return true;
+            }
+            
+            @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
                 if (e1 == null || e2 == null) {
                     return false;
@@ -161,27 +191,23 @@ public class PlayerActivity extends AppCompatActivity {
                 float diffX = e2.getX() - e1.getX();
                 float diffY = e2.getY() - e1.getY();
                 
-                if (Math.abs(diffY) > Math.abs(diffX)) {
-                    // 垂直滑动
-                    if (Math.abs(diffY) > SWIPE_THRESHOLD && Math.abs(velocityY) > SWIPE_VELOCITY_THRESHOLD) {
-                        if (diffY > 0) {
-                            // 下滑 - 播放上一个视频
-                            onSwipeDown();
-                        } else {
-                            // 上滑 - 播放下一个视频
-                            onSwipeUp();
-                        }
-                        return true;
-                    }
-                } else {
-                    // 水平滑动
-                    if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                // 水平快速滑动 - 快进/快退
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 100) {
+                    if (player != null) {
+                        long currentPosition = player.getCurrentPosition();
+                        long seekAmount = 15000; // 15秒
+                        
                         if (diffX > 0) {
-                            // 右滑 - 加入收藏
-                            onSwipeRight();
+                            // 右滑 - 快进
+                            long duration = player.getDuration();
+                            long newPosition = Math.min(duration, currentPosition + seekAmount);
+                            player.seekTo(newPosition);
+                            showSeekOverlay("快进15秒 ▶▶");
                         } else {
-                            // 左滑 - 加入待删除
-                            onSwipeLeft();
+                            // 左滑 - 快退
+                            long newPosition = Math.max(0, currentPosition - seekAmount);
+                            player.seekTo(newPosition);
+                            showSeekOverlay("◀◀ 快退15秒");
                         }
                         return true;
                     }
@@ -195,9 +221,54 @@ public class PlayerActivity extends AppCompatActivity {
         playerView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                return gestureDetector.onTouchEvent(event);
+                gestureDetector.onTouchEvent(event);
+                
+                // 处理触摸结束事件，隐藏调节提示
+                if (event.getAction() == MotionEvent.ACTION_UP || 
+                    event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    isAdjustingVolume = false;
+                    isAdjustingBrightness = false;
+                }
+                
+                return true;
             }
         });
+    }
+    
+    // 调节音量
+    private void adjustVolume(float deltaY) {
+        int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+        
+        // deltaY > 0 表示向上滑动，增加音量
+        int volumeChange = (int) (deltaY / 30); // 调节灵敏度
+        int newVolume = Math.max(0, Math.min(maxVolume, currentVolume + volumeChange));
+        
+        if (newVolume != currentVolume) {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0);
+            int volumePercent = (int) (newVolume * 100.0f / maxVolume);
+            showSeekOverlay("音量: " + volumePercent + "%");
+        }
+    }
+    
+    // 调节亮度
+    private void adjustBrightness(float deltaY) {
+        WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
+        
+        // deltaY > 0 表示向上滑动，增加亮度
+        float brightnessChange = deltaY / 1000; // 调节灵敏度
+        float newBrightness = layoutParams.screenBrightness + brightnessChange;
+        
+        // 限制在0.01到1.0之间
+        newBrightness = Math.max(0.01f, Math.min(1.0f, newBrightness));
+        
+        if (Math.abs(newBrightness - layoutParams.screenBrightness) > 0.01f) {
+            layoutParams.screenBrightness = newBrightness;
+            getWindow().setAttributes(layoutParams);
+            
+            int brightnessPercent = (int) (newBrightness * 100);
+            showSeekOverlay("亮度: " + brightnessPercent + "%");
+        }
     }
     
     private void showSeekOverlay(String text) {
@@ -205,62 +276,13 @@ public class PlayerActivity extends AppCompatActivity {
             seekOverlay.setText(text);
             seekOverlay.setVisibility(View.VISIBLE);
             
-            // 1秒后自动隐藏
+            // 1.5秒后自动隐藏
             seekOverlay.removeCallbacks(null);
             seekOverlay.postDelayed(() -> {
                 if (seekOverlay != null) {
                     seekOverlay.setVisibility(View.GONE);
                 }
-            }, 1000);
-        }
-    }
-    
-    private void onSwipeUp() {
-        // 上滑播放下一个视频
-        playNextVideo();
-    }
-    
-    private void onSwipeDown() {
-        // 下滑播放上一个视频
-        playPreviousVideo();
-    }
-    
-    private void onSwipeLeft() {
-        // 左滑加入待删除
-        if (currentFilePath != null && !pendingDeleteManager.isPendingDelete(currentFilePath)) {
-            pendingDeleteManager.addPendingDelete(currentFilePath);
-            updatePendingDeleteButton();
-            Toast.makeText(this, getString(R.string.marked_for_deletion), Toast.LENGTH_SHORT).show();
-            
-            // 标记为待删除后，自动播放下一个视频
-            playNextVideo();
-        }
-    }
-    
-    private void onSwipeRight() {
-        // 右滑加入收藏
-        if (currentFilePath != null && !favoriteManager.isFavorite(currentFilePath)) {
-            favoriteManager.addFavorite(currentFilePath);
-            updateFavoriteButton();
-            Toast.makeText(this, getString(R.string.favorited), Toast.LENGTH_SHORT).show();
-        }
-    }
-    
-    private void playNextVideo() {
-        if (player != null && player.hasNextMediaItem()) {
-            player.seekToNextMediaItem();
-            Toast.makeText(this, R.string.next_video, Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, R.string.last_video, Toast.LENGTH_SHORT).show();
-        }
-    }
-    
-    private void playPreviousVideo() {
-        if (player != null && player.hasPreviousMediaItem()) {
-            player.seekToPreviousMediaItem();
-            Toast.makeText(this, R.string.previous_video, Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, R.string.first_video, Toast.LENGTH_SHORT).show();
+            }, 1500);
         }
     }
     
@@ -292,8 +314,8 @@ public class PlayerActivity extends AppCompatActivity {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
         
         // 如果标记为待删除，自动播放下一个视频
-        if (isPending) {
-            playNextVideo();
+        if (isPending && player != null && player.hasNextMediaItem()) {
+            player.seekToNextMediaItem();
         }
     }
     
@@ -532,11 +554,7 @@ public class PlayerActivity extends AppCompatActivity {
     
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // 音量键循环切换播放速度
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP && player != null) {
-            PlaybackSpeedHelper.cycleSpeed(this, player);
-            return true;
-        }
+        // 音量键正常控制音量，不再切换播放速度
         return super.onKeyDown(keyCode, event);
     }
 }
