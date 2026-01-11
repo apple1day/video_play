@@ -21,8 +21,11 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.Spinner;
+import android.widget.SearchView;
 import android.widget.TextView;
+import android.text.TextUtils;
 import android.widget.Toast;
+import android.app.AlertDialog;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -44,13 +47,17 @@ public class HomeFragment extends Fragment {
 
     private static final String TAG = "HomeFragment";
     
+    private SearchView searchView;
     private SwipeRefreshLayout swipeRefreshLayout;
     private RecyclerView recyclerView;
     private TextView emptyView;
+    private TextView loadingView;
     private Spinner storageSpinner;
     private Button sortTimeButton;
     private Button sortSizeButton;
     private Button viewToggleButton;
+    private Button smartFilterButton;
+    private Button browseAllVideosButton;
     private View toolbarLayout;
     private View selectionToolbarLayout;
     private Button selectAllButton;
@@ -63,6 +70,7 @@ public class HomeFragment extends Fragment {
     private List<FileItem> allFiles = new ArrayList<>();
     private List<FileItem> allVideoFiles = new ArrayList<>(); // 存储所有视频文件
     private List<FileItem> displayedFiles = new ArrayList<>(); // 当前显示的视频列表（排序后）
+    private String currentSearchQuery = ""; // 当前搜索关键词
     private FileItem.FileType currentFilter = FileItem.FileType.VIDEO;
     private SortType currentSort = SortType.TIME;
     private boolean timeSortDescending = true; // 默认从新到旧（降序）
@@ -86,13 +94,17 @@ public class HomeFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_home, container, false);
         
+        searchView = view.findViewById(R.id.search_view);
         swipeRefreshLayout = view.findViewById(R.id.swipe_refresh_layout);
         recyclerView = view.findViewById(R.id.recycler_view);
         emptyView = view.findViewById(R.id.empty_view);
+        loadingView = view.findViewById(R.id.loading_view);
         storageSpinner = view.findViewById(R.id.storage_spinner);
         sortTimeButton = view.findViewById(R.id.sort_time_button);
         sortSizeButton = view.findViewById(R.id.sort_size_button);
         viewToggleButton = view.findViewById(R.id.view_toggle_button);
+        smartFilterButton = view.findViewById(R.id.smart_filter_button);
+        browseAllVideosButton = view.findViewById(R.id.browse_all_videos_button);
         toolbarLayout = view.findViewById(R.id.toolbar_layout);
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
         selectAllButton = view.findViewById(R.id.select_all_button);
@@ -127,12 +139,16 @@ public class HomeFragment extends Fragment {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         recyclerView.setAdapter(adapter);
         
+        // 设置搜索框
+        setupSearchView();
         // 设置下拉刷新
         setupSwipeRefresh();
         setupStorageSpinner();
         setupSortButtons();
         setupViewToggleButton();
+        setupSmartFilterButton();
         setupSelectionButtons();
+        setupBrowseAllVideosButton();
         
         // 初始化删除线程池和主线程Handler
         deleteExecutor = Executors.newSingleThreadExecutor();
@@ -162,6 +178,31 @@ public class HomeFragment extends Fragment {
         }
 
         return view;
+    }
+    
+    private void setupSearchView() {
+        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                // 提交搜索（可选）
+                return false;
+            }
+
+            @Override
+            public boolean onQueryTextChange(String newText) {
+                // 实时搜索
+                currentSearchQuery = newText;
+                applyFilterAndSort();
+                return true;
+            }
+        });
+        
+        // 清除搜索时恢复列表
+        searchView.setOnCloseListener(() -> {
+            currentSearchQuery = "";
+            applyFilterAndSort();
+            return false;
+        });
     }
     
     private void setupSwipeRefresh() {
@@ -338,20 +379,183 @@ public class HomeFragment extends Fragment {
             switchLayoutManager();
         });
     }
+    
+    private void setupBrowseAllVideosButton() {
+        browseAllVideosButton.setOnClickListener(v -> {
+            // 检查权限
+            if (!PermissionHelper.hasMediaPermissions(getActivity())) {
+                PermissionHelper.requestMediaPermissions(getActivity());
+                return;
+            }
+            
+            // 打开全部视频页面
+            Intent intent = new Intent(getContext(), AllVideosActivity.class);
+            startActivity(intent);
+        });
+    }
+    
+    private void setupSmartFilterButton() {
+        if (smartFilterButton != null) {
+            smartFilterButton.setOnClickListener(v -> showSmartFilterDialog());
+        }
+    }
+    
+    private void showSmartFilterDialog() {
+        String[] filterOptions = new String[]{
+            "按大小筛选",
+            "按时间筛选",
+            "按时长筛选（较慢）",
+            "清除筛选"
+        };
+        
+        new AlertDialog.Builder(getContext())
+            .setTitle("智能筛选")
+            .setItems(filterOptions, (dialog, which) -> {
+                switch (which) {
+                    case 0:
+                        showSizeFilterDialog();
+                        break;
+                    case 1:
+                        showTimeFilterDialog();
+                        break;
+                    case 2:
+                        showDurationFilterDialog();
+                        break;
+                    case 3:
+                        clearFilter();
+                        break;
+                }
+            })
+            .show();
+    }
+    
+    private void showSizeFilterDialog() {
+        String[] options = SmartFilterHelper.getSizeFilterLabels();
+        new AlertDialog.Builder(getContext())
+            .setTitle("按文件大小筛选")
+            .setItems(options, (dialog, which) -> {
+                if (which == 0) {
+                    applyFilterAndSort();
+                } else {
+                    SmartFilterHelper.FilterType[] types = {
+                        null,
+                        SmartFilterHelper.FilterType.LARGE_FILE,
+                        SmartFilterHelper.FilterType.MEDIUM_FILE,
+                        SmartFilterHelper.FilterType.SMALL_FILE
+                    };
+                    applySmartFilter(types[which]);
+                }
+                Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+            })
+            .show();
+    }
+    
+    private void showTimeFilterDialog() {
+        String[] options = SmartFilterHelper.getTimeFilterLabels();
+        new AlertDialog.Builder(getContext())
+            .setTitle("按时间筛选")
+            .setItems(options, (dialog, which) -> {
+                if (which == 0) {
+                    applyFilterAndSort();
+                } else {
+                    SmartFilterHelper.FilterType[] types = {
+                        null,
+                        SmartFilterHelper.FilterType.RECENT_WEEK,
+                        SmartFilterHelper.FilterType.RECENT_MONTH,
+                        SmartFilterHelper.FilterType.OLD_FILE
+                    };
+                    applySmartFilter(types[which]);
+                }
+                Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+            })
+            .show();
+    }
+    
+    private void showDurationFilterDialog() {
+        String[] options = SmartFilterHelper.getDurationFilterLabels();
+        new AlertDialog.Builder(getContext())
+            .setTitle("按视频时长筛选")
+            .setItems(options, (dialog, which) -> {
+                if (which == 0) {
+                    applyFilterAndSort();
+                } else {
+                    // 显示加载提示
+                    Toast.makeText(getContext(), "正在分析视频时长...", Toast.LENGTH_LONG).show();
+                    
+                    SmartFilterHelper.FilterType[] types = {
+                        null,
+                        SmartFilterHelper.FilterType.LONG_VIDEO,
+                        SmartFilterHelper.FilterType.MEDIUM_VIDEO,
+                        SmartFilterHelper.FilterType.SHORT_VIDEO
+                    };
+                    
+                    // 在后台线程执行（比较耗时）
+                    final int selectedIndex = which;
+                    new Thread(() -> {
+                        List<FileItem> filtered = SmartFilterHelper.filterByDuration(
+                            allFiles, types[selectedIndex]);
+                        
+                        mainHandler.post(() -> {
+                            displayedFiles = new ArrayList<>(filtered);
+                            adapter.updateFiles(filtered);
+                            updateEmptyView();
+                            Toast.makeText(getContext(), 
+                                "已筛选: " + options[selectedIndex] + " (" + filtered.size() + "个)", 
+                                Toast.LENGTH_SHORT).show();
+                        });
+                    }).start();
+                }
+            })
+            .show();
+    }
+    
+    private void applySmartFilter(SmartFilterHelper.FilterType filterType) {
+        List<FileItem> filtered = SmartFilterHelper.smartFilter(allFiles, filterType);
+        displayedFiles = new ArrayList<>(filtered);
+        
+        // 应用排序
+        Collections.sort(displayedFiles, (o1, o2) -> {
+            if (currentSort == SortType.TIME) {
+                if (timeSortDescending) {
+                    return Long.compare(o2.getLastModified(), o1.getLastModified());
+                } else {
+                    return Long.compare(o1.getLastModified(), o2.getLastModified());
+                }
+            } else {
+                if (sizeSortDescending) {
+                    return Long.compare(o2.getSize(), o1.getSize());
+                } else {
+                    return Long.compare(o1.getSize(), o2.getSize());
+                }
+            }
+        });
+        
+        adapter.updateFiles(displayedFiles);
+        updateEmptyView();
+    }
+    
+    private void clearFilter() {
+        applyFilterAndSort();
+        Toast.makeText(getContext(), "已清除筛选", Toast.LENGTH_SHORT).show();
+    }
+    
+    private void updateEmptyView() {
+        if (displayedFiles.isEmpty()) {
+            emptyView.setVisibility(View.VISIBLE);
+            recyclerView.setVisibility(View.GONE);
+        } else {
+            emptyView.setVisibility(View.GONE);
+            recyclerView.setVisibility(View.VISIBLE);
+        }
+    }
 
     private void updateViewToggleButton() {
         if (isGridView) {
-            // 当前是网格视图，点击后切换到列表视图，所以显示列表视图按钮
-            viewToggleButton.setText(getString(R.string.list_view));
-            // 使用列表图标（左边）
-            viewToggleButton.setCompoundDrawablesWithIntrinsicBounds(
-                android.R.drawable.ic_menu_sort_alphabetically, 0, 0, 0);
+            // 当前是网格视图，点击后切换到列表视图
+            viewToggleButton.setText("列表");
         } else {
-            // 当前是列表视图，点击后切换到网格视图，所以显示网格视图按钮
-            viewToggleButton.setText(getString(R.string.grid_view));
-            // 使用网格图标（左边）
-            viewToggleButton.setCompoundDrawablesWithIntrinsicBounds(
-                android.R.drawable.ic_menu_view, 0, 0, 0);
+            // 当前是列表视图，点击后切换到网格视图
+            viewToggleButton.setText("网格");
         }
     }
 
@@ -374,6 +578,13 @@ public class HomeFragment extends Fragment {
     }
 
     private void loadFiles() {
+        // 显示加载提示
+        if (loadingView != null) {
+            loadingView.setVisibility(View.VISIBLE);
+            emptyView.setVisibility(View.GONE);
+            recyclerView.setVisibility(View.GONE);
+        }
+        
         new Thread(() -> {
             List<File> targetDirectories = new ArrayList<>();
             
@@ -415,6 +626,11 @@ public class HomeFragment extends Fragment {
                 allFiles = files; // 保存当前筛选的文件
                 applyFilterAndSort();
                 
+                // 隐藏加载提示
+                if (loadingView != null) {
+                    loadingView.setVisibility(View.GONE);
+                }
+                
                 // 停止刷新动画
                 if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
                     swipeRefreshLayout.setRefreshing(false);
@@ -427,7 +643,11 @@ public class HomeFragment extends Fragment {
         List<FileItem> filtered = new ArrayList<>();
         for (FileItem item : allFiles) {
             if (currentFilter == null || item.getFileType() == currentFilter) {
-                filtered.add(item);
+                // 应用搜索过滤
+                if (TextUtils.isEmpty(currentSearchQuery) || 
+                    item.getName().toLowerCase().contains(currentSearchQuery.toLowerCase())) {
+                    filtered.add(item);
+                }
             }
         }
 

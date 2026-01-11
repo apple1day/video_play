@@ -15,5 +15,22 @@
         app:show_buffering="when_playing"
         app:shutter_background_color="#00000000" />
 
+    <!-- 双击快进/快退提示 -->
+    <TextView
+        android:id="@+id/seek_overlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:padding="16dp"
+        android:background="#CC000000"
+        android:textColor="#FFFFFF"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- 手势提示层 -->
+    <include layout="@layout/gesture_hint_overlay" />
+
 </FrameLayout>
+
 

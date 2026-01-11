@@ -258,14 +258,14 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         public void bind(FileItem item, int position) {
             fileName.setText(item.getName());
             
-            // 设置图标
+            // 设置图标/缩略图
             if (item.isDirectory()) {
-                // 使用备用图标，因为 ic_menu_folder 在新版本 Android 中可能不存在
                 icon.setImageResource(android.R.drawable.ic_dialog_info);
             } else {
                 switch (item.getFileType()) {
                     case VIDEO:
-                        icon.setImageResource(android.R.drawable.ic_media_play);
+                        // 为视频加载缩略图
+                        ThumbnailLoader.loadThumbnail(context, item.getFile(), icon);
                         break;
                     case AUDIO:
                         icon.setImageResource(android.R.drawable.ic_media_play);

@@ -5,62 +5,127 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <!-- 搜索框 -->
+    <SearchView
+        android:id="@+id/search_view"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:iconifiedByDefault="false"
+        android:queryHint="搜索视频..."
+        android:background="@android:drawable/edit_text" />
+
+    <!-- 浏览全部视频按钮 -->
+    <Button
+        android:id="@+id/browse_all_videos_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:text="@string/browse_all_videos"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:drawableStart="@android:drawable/ic_menu_gallery"
+        android:drawablePadding="8dp"
+        android:padding="16dp"
+        android:background="@android:color/holo_blue_light"
+        android:textColor="@android:color/white"
+        android:elevation="4dp" />
+
+    <!-- 工具栏区域 - 使用垂直布局支持多行 -->
     <LinearLayout
         android:id="@+id/toolbar_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:padding="8dp"
-        android:layout_marginTop="16dp"
-        android:gravity="center_vertical">
+        android:layout_marginTop="8dp">
 
-        <TextView
-            android:id="@+id/storage_label"
-            android:layout_width="wrap_content"
+        <!-- 第一行：存储选择 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/storage_label"
-            android:textSize="14sp"
-            android:layout_marginEnd="8dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
 
-        <Spinner
-            android:id="@+id/storage_spinner"
-            android:layout_width="wrap_content"
+            <TextView
+                android:id="@+id/storage_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/storage_label"
+                android:textSize="14sp"
+                android:layout_marginEnd="8dp" />
+
+            <Spinner
+                android:id="@+id/storage_spinner"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minWidth="100dp" />
+
+        </LinearLayout>
+
+        <!-- 第二行：排序和视图切换按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minWidth="100dp"
-            android:layout_marginEnd="16dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+            <Button
+                android:id="@+id/sort_time_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="时间"
+                android:textSize="12sp"
+                android:drawableEnd="@android:drawable/arrow_down_float"
+                android:drawablePadding="2dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:minWidth="0dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <Button
-            android:id="@+id/sort_time_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="@string/sort_by_time"
-            android:drawableEnd="@android:drawable/arrow_down_float"
-            android:drawablePadding="4dp"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            <Button
+                android:id="@+id/sort_size_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="大小"
+                android:textSize="12sp"
+                android:drawableEnd="@android:drawable/arrow_down_float"
+                android:drawablePadding="2dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:minWidth="0dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <Button
-            android:id="@+id/sort_size_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="@string/sort_by_size"
-            android:drawableEnd="@android:drawable/arrow_down_float"
-            android:drawablePadding="4dp"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            <Button
+                android:id="@+id/view_toggle_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="网格"
+                android:textSize="12sp"
+                android:drawablePadding="2dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:minWidth="0dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <Button
-            android:id="@+id/view_toggle_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:drawablePadding="4dp"
-            android:text="@string/grid_view"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            <Button
+                android:id="@+id/smart_filter_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🎯筛选"
+                android:textSize="12sp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:minWidth="0dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
@@ -169,6 +234,15 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:text="@string/no_files"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/loading_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="正在扫描视频..."
+                android:textSize="16sp"
                 android:visibility="gone" />
 
         </FrameLayout>

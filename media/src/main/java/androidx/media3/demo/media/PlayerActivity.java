@@ -1,14 +1,17 @@
 package androidx.media3.demo.media;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.GestureDetector;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ImageButton;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -34,7 +37,10 @@ public class PlayerActivity extends AppCompatActivity {
     private String currentFilePath;
     private FavoriteManager favoriteManager;
     private PendingDeleteManager pendingDeleteManager;
+    private PlayHistoryManager playHistoryManager;
     private GestureDetector gestureDetector;
+    private TextView seekOverlay;
+    private View gestureHintOverlay;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,9 +48,12 @@ public class PlayerActivity extends AppCompatActivity {
         setContentView(R.layout.activity_player);
         
         playerView = findViewById(R.id.player_view);
+        seekOverlay = findViewById(R.id.seek_overlay);
+        gestureHintOverlay = findViewById(R.id.gesture_hint_overlay);
         
         favoriteManager = FavoriteManager.getInstance(this);
         pendingDeleteManager = PendingDeleteManager.getInstance(this);
+        playHistoryManager = PlayHistoryManager.getInstance(this);
         
         Intent intent = getIntent();
         currentFilePath = intent.getStringExtra("file_path");
@@ -81,12 +90,67 @@ public class PlayerActivity extends AppCompatActivity {
         
         // 设置手势检测
         setupGestureDetector();
+        
+        // 显示手势提示（首次使用）
+        showGestureHintIfNeeded();
+    }
+    
+    private void showGestureHintIfNeeded() {
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        boolean hasShownHint = prefs.getBoolean("gesture_hint_shown", false);
+        
+        if (!hasShownHint && gestureHintOverlay != null) {
+            gestureHintOverlay.setVisibility(View.VISIBLE);
+            
+            View closeButton = gestureHintOverlay.findViewById(R.id.close_hint_button);
+            if (closeButton != null) {
+                closeButton.setOnClickListener(v -> {
+                    gestureHintOverlay.setVisibility(View.GONE);
+                    prefs.edit().putBoolean("gesture_hint_shown", true).apply();
+                });
+            }
+            
+            // 5秒后自动关闭
+            gestureHintOverlay.postDelayed(() -> {
+                if (gestureHintOverlay != null) {
+                    gestureHintOverlay.setVisibility(View.GONE);
+                    prefs.edit().putBoolean("gesture_hint_shown", true).apply();
+                }
+            }, 5000);
+        }
     }
     
     private void setupGestureDetector() {
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             private static final int SWIPE_THRESHOLD = 100;
             private static final int SWIPE_VELOCITY_THRESHOLD = 100;
+            
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                // 双击快进/快退
+                int screenWidth = playerView.getWidth();
+                float touchX = e.getX();
+                
+                if (player != null) {
+                    long currentPosition = player.getCurrentPosition();
+                    long seekAmount = 10000; // 10秒
+                    
+                    if (touchX < screenWidth / 2) {
+                        // 左侧双击 - 快退10秒
+                        long newPosition = Math.max(0, currentPosition - seekAmount);
+                        player.seekTo(newPosition);
+                        showSeekOverlay("◀◀ 快退10秒");
+                    } else {
+                        // 右侧双击 - 快进10秒
+                        long duration = player.getDuration();
+                        long newPosition = Math.min(duration, currentPosition + seekAmount);
+                        player.seekTo(newPosition);
+                        showSeekOverlay("快进10秒 ▶▶");
+                    }
+                    return true;
+                }
+                return false;
+            }
             
             @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
@@ -134,6 +198,21 @@ public class PlayerActivity extends AppCompatActivity {
                 return gestureDetector.onTouchEvent(event);
             }
         });
+    }
+    
+    private void showSeekOverlay(String text) {
+        if (seekOverlay != null) {
+            seekOverlay.setText(text);
+            seekOverlay.setVisibility(View.VISIBLE);
+            
+            // 1秒后自动隐藏
+            seekOverlay.removeCallbacks(null);
+            seekOverlay.postDelayed(() -> {
+                if (seekOverlay != null) {
+                    seekOverlay.setVisibility(View.GONE);
+                }
+            }, 1000);
+        }
     }
     
     private void onSwipeUp() {
@@ -283,6 +362,16 @@ public class PlayerActivity extends AppCompatActivity {
         // 从当前索引开始播放
         player.setMediaItems(mediaItems, currentIndex, 0);
         player.prepare();
+        
+        // 恢复播放位置（如果有历史记录）
+        long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
+        if (savedPosition > 0) {
+            player.seekTo(savedPosition);
+        }
+        
+        // 恢复播放速度
+        PlaybackSpeedHelper.restorePlaybackSpeed(this, player);
+        
         player.play();
 
         player.addListener(new Player.Listener() {
@@ -311,10 +400,26 @@ public class PlayerActivity extends AppCompatActivity {
                 // 当切换到新的视频时，更新当前索引和文件路径
                 if (player.getCurrentMediaItemIndex() >= 0 && 
                     player.getCurrentMediaItemIndex() < fileList.size()) {
+                    // 保存旧视频的播放位置
+                    if (currentFilePath != null && player.getDuration() > 0) {
+                        playHistoryManager.savePlayPosition(
+                            currentFilePath, 
+                            player.getCurrentPosition(),
+                            player.getDuration()
+                        );
+                    }
+                    
+                    // 更新当前视频
                     currentIndex = player.getCurrentMediaItemIndex();
                     currentFilePath = fileList.get(currentIndex);
                     updateFavoriteButton();
                     updatePendingDeleteButton();
+                    
+                    // 恢复新视频的播放位置
+                    long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
+                    if (savedPosition > 0) {
+                        player.seekTo(savedPosition);
+                    }
                 }
             }
         });
@@ -409,9 +514,29 @@ public class PlayerActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        
+        // 保存播放位置
+        if (player != null && currentFilePath != null && player.getDuration() > 0) {
+            playHistoryManager.savePlayPosition(
+                currentFilePath,
+                player.getCurrentPosition(),
+                player.getDuration()
+            );
+        }
+        
         if (player != null) {
             player.release();
             player = null;
         }
+    }
+    
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // 音量键循环切换播放速度
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP && player != null) {
+            PlaybackSpeedHelper.cycleSpeed(this, player);
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 }

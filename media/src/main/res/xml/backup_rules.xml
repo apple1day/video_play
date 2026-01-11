@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 备份规则 - 控制哪些数据可以备份 -->
+<full-backup-content>
+    <!-- 包含应用数据目录 -->
+    <include domain="file" path="." />
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="." />
+    
+    <!-- 排除缓存和临时文件 -->
+    <exclude domain="file" path="cache/" />
+    <exclude domain="file" path="code_cache/" />
+    
+    <!-- 排除大型视频文件（可选，避免备份文件过大） -->
+    <!-- <exclude domain="file" path="Movies/" /> -->
+</full-backup-content>
