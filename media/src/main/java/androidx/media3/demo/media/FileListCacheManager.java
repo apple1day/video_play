@@ -119,12 +119,8 @@ public class FileListCacheManager {
                     return null;
                 }
                 
-                String name = jsonObject.getString("name");
-                long size = jsonObject.getLong("size");
-                long lastModified = jsonObject.getLong("lastModified");
-                FileItem.FileType type = FileItem.FileType.valueOf(jsonObject.getString("type"));
-                
-                FileItem item = new FileItem(file, name, size, lastModified, type);
+                // FileItem 构造函数会自动从 file 对象提取所有信息
+                FileItem item = new FileItem(file);
                 fileList.add(item);
             }
             
