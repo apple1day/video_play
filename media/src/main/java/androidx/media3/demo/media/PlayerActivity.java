@@ -109,10 +109,15 @@ public class PlayerActivity extends AppCompatActivity {
     }
     
     private void showGestureHintIfNeeded() {
+        if (gestureHintOverlay == null) {
+            return;
+        }
+        
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
         boolean hasShownHint = prefs.getBoolean("gesture_hint_shown", false);
         
-        if (!hasShownHint && gestureHintOverlay != null) {
+        if (!hasShownHint) {
+            // 首次显示提示
             gestureHintOverlay.setVisibility(View.VISIBLE);
             
             // 点击提示层任意位置关闭
@@ -128,11 +133,20 @@ public class PlayerActivity extends AppCompatActivity {
                     prefs.edit().putBoolean("gesture_hint_shown", true).apply();
                 });
             }
+        } else {
+            // 已经显示过，确保隐藏
+            gestureHintOverlay.setVisibility(View.GONE);
         }
     }
     
     private void setupGestureDetector() {
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                // 单击事件返回 false，让 PlayerView 处理（显示/隐藏控制器）
+                return false;
+            }
+            
             @Override
             public boolean onDoubleTap(MotionEvent e) {
                 // 双击快进/快退
@@ -170,13 +184,33 @@ public class PlayerActivity extends AppCompatActivity {
                 float startX = e1.getX();
                 float deltaY = e1.getY() - e2.getY(); // 正值表示向上滑动
                 
-                // 判断是左侧还是右侧
-                if (startX < screenWidth / 2) {
+                // 将屏幕分为三部分：左(0-33%)、中(33%-67%)、右(67%-100%)
+                float leftBoundary = screenWidth * 0.33f;
+                float rightBoundary = screenWidth * 0.67f;
+                
+                if (startX < leftBoundary) {
                     // 左侧 - 调节亮度
                     adjustBrightness(deltaY);
-                } else {
+                } else if (startX > rightBoundary) {
                     // 右侧 - 调节音量
                     adjustVolume(deltaY);
+                } else {
+                    // 中间区域 - 切换视频（只在明显的垂直滑动时触发）
+                    if (Math.abs(distanceY) > Math.abs(distanceX) && Math.abs(deltaY) > 50) {
+                        if (deltaY > 0) {
+                            // 向上滑动 - 切换到下一个视频
+                            if (player != null && player.hasNextMediaItem()) {
+                                player.seekToNextMediaItem();
+                                showSeekOverlay("下一个视频 ▼");
+                            }
+                        } else {
+                            // 向下滑动 - 切换到上一个视频
+                            if (player != null && player.hasPreviousMediaItem()) {
+                                player.seekToPreviousMediaItem();
+                                showSeekOverlay("上一个视频 ▲");
+                            }
+                        }
+                    }
                 }
                 
                 return true;
@@ -221,7 +255,8 @@ public class PlayerActivity extends AppCompatActivity {
         playerView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                gestureDetector.onTouchEvent(event);
+                // 先让手势检测器处理
+                boolean handled = gestureDetector.onTouchEvent(event);
                 
                 // 处理触摸结束事件，隐藏调节提示
                 if (event.getAction() == MotionEvent.ACTION_UP || 
@@ -230,7 +265,8 @@ public class PlayerActivity extends AppCompatActivity {
                     isAdjustingBrightness = false;
                 }
                 
-                return true;
+                // 只有当手势被处理时才返回 true，否则返回 false 让 PlayerView 处理单击
+                return handled;
             }
         });
     }

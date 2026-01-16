@@ -34,8 +34,8 @@ android {
 
     defaultConfig {
         applicationId 'com.anxiong666.www'
-        versionName '3.2.0.1'
-        versionCode 3201
+        versionName '3.2.0.3'
+        versionCode 3203
         minSdkVersion 25
         targetSdkVersion 36
         

@@ -6,7 +6,8 @@
     android:layout_height="match_parent"
     android:background="#CC000000"
     android:clickable="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:visibility="gone">
 
     <!-- 上滑提示 -->
     <LinearLayout
@@ -23,12 +24,12 @@
             android:layout_height="wrap_content"
             android:text="⬆️"
             android:textSize="48sp"
-            android:textColor="#FFFFFF" />
+            android:textColor="#2196F3" />
         
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="上滑切换下一个视频"
+            android:text="中间上滑切换下一个"
             android:textColor="#FFFFFF"
             android:textSize="16sp"
             android:layout_marginTop="8dp" />
@@ -49,18 +50,18 @@
             android:layout_height="wrap_content"
             android:text="⬇️"
             android:textSize="48sp"
-            android:textColor="#FFFFFF" />
+            android:textColor="#2196F3" />
         
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="下滑切换上一个视频"
+            android:text="中间下滑切换上一个"
             android:textColor="#FFFFFF"
             android:textSize="16sp"
             android:layout_marginTop="8dp" />
     </LinearLayout>
 
-    <!-- 左滑提示 -->
+    <!-- 左侧亮度提示 -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -73,20 +74,21 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="⬅️"
+            android:text="☀️"
             android:textSize="48sp"
-            android:textColor="#FF0000" />
+            android:textColor="#FFD700" />
         
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="左滑标记删除"
+            android:text="左侧上下滑动\n调节亮度"
             android:textColor="#FFFFFF"
-            android:textSize="16sp"
+            android:textSize="14sp"
+            android:gravity="center"
             android:layout_marginTop="8dp" />
     </LinearLayout>
 
-    <!-- 右滑提示 -->
+    <!-- 右侧音量提示 -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -99,16 +101,17 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="➡️"
+            android:text="🔊"
             android:textSize="48sp"
-            android:textColor="#FFD700" />
+            android:textColor="#4CAF50" />
         
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="右滑添加收藏"
+            android:text="右侧上下滑动\n调节音量"
             android:textColor="#FFFFFF"
-            android:textSize="16sp"
+            android:textSize="14sp"
+            android:gravity="center"
             android:layout_marginTop="8dp" />
     </LinearLayout>
 
@@ -141,7 +144,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="• 双击左侧快退10秒\n• 双击右侧快进10秒\n• 点击屏幕显示/隐藏控制器"
+            android:text="• 双击左侧快退10秒\n• 双击右侧快进10秒\n• 左右快速滑动快进/快退15秒\n• 点击屏幕显示/隐藏控制器"
             android:textColor="#CCCCCC"
             android:textSize="14sp"
             android:layout_marginTop="16dp"
