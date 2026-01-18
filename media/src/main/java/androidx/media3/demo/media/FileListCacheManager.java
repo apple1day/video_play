@@ -27,6 +27,9 @@ public class FileListCacheManager {
     // 缓存有效期：30分钟
     private static final long CACHE_VALIDITY = 30 * 60 * 1000;
     
+    // 最大缓存文件数量，避免 SharedPreferences 过大导致卡顿
+    private static final int MAX_CACHE_FILES = 500;
+    
     private static FileListCacheManager instance;
     private SharedPreferences prefs;
     
@@ -43,12 +46,17 @@ public class FileListCacheManager {
     
     /**
      * 保存文件列表到缓存
+     * 优化：限制缓存文件数量，避免数据过大
      */
     public void saveFileList(List<FileItem> fileList, boolean isInternalStorage) {
         try {
             JSONArray jsonArray = new JSONArray();
             
-            for (FileItem item : fileList) {
+            // 限制缓存的文件数量
+            int cacheCount = Math.min(fileList.size(), MAX_CACHE_FILES);
+            
+            for (int i = 0; i < cacheCount; i++) {
+                FileItem item = fileList.get(i);
                 JSONObject jsonObject = new JSONObject();
                 jsonObject.put("path", item.getFile().getAbsolutePath());
                 jsonObject.put("name", item.getName());
@@ -64,7 +72,10 @@ public class FileListCacheManager {
                 .putBoolean(KEY_STORAGE_TYPE, isInternalStorage)
                 .apply();
             
-            Log.d(TAG, "文件列表已缓存: " + fileList.size() + " 个文件");
+            if (fileList.size() > MAX_CACHE_FILES) {
+                Log.d(TAG, "文件列表过大，只缓存前 " + MAX_CACHE_FILES + " 个文件");
+            }
+            Log.d(TAG, "文件列表已缓存: " + cacheCount + " 个文件");
         } catch (JSONException e) {
             Log.e(TAG, "保存缓存失败", e);
         }
@@ -100,23 +111,30 @@ public class FileListCacheManager {
             JSONArray jsonArray = new JSONArray(jsonString);
             List<FileItem> fileList = new ArrayList<>();
             
+            // 优化：只检查前10个文件的有效性，避免全部检查导致卡顿
+            int checkCount = Math.min(10, jsonArray.length());
+            
             for (int i = 0; i < jsonArray.length(); i++) {
                 JSONObject jsonObject = jsonArray.getJSONObject(i);
                 
                 String path = jsonObject.getString("path");
                 File file = new File(path);
                 
-                // 检查文件是否仍然存在
-                if (!file.exists()) {
-                    continue;
-                }
-                
-                // 检查文件修改时间是否变化
-                long cachedModified = jsonObject.getLong("lastModified");
-                if (file.lastModified() != cachedModified) {
-                    // 文件已被修改，缓存失效
-                    Log.d(TAG, "文件已被修改，缓存失效: " + file.getName());
-                    return null;
+                // 只对前几个文件进行完整检查
+                if (i < checkCount) {
+                    // 检查文件是否仍然存在
+                    if (!file.exists()) {
+                        Log.d(TAG, "缓存文件不存在，缓存失效: " + file.getName());
+                        return null;
+                    }
+                    
+                    // 检查文件修改时间是否变化
+                    long cachedModified = jsonObject.getLong("lastModified");
+                    if (file.lastModified() != cachedModified) {
+                        // 文件已被修改，缓存失效
+                        Log.d(TAG, "文件已被修改，缓存失效: " + file.getName());
+                        return null;
+                    }
                 }
                 
                 // FileItem 构造函数会自动从 file 对象提取所有信息

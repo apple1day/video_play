@@ -227,15 +227,18 @@ public class HomeFragment extends Fragment {
         new Thread(() -> {
             storageDirectories = FileUtils.getStorageDirectories(getContext());
             
-            // 判断是否有外部存储
-            File externalStorage = Environment.getExternalStorageDirectory();
+            // 判断是否有外部存储（非主存储的设备）
+            File primaryStorage = Environment.getExternalStorageDirectory();
             hasExternalStorage = false;
             for (File dir : storageDirectories) {
-                if (!dir.equals(Environment.getDataDirectory()) && dir.exists()) {
+                if (!dir.equals(primaryStorage) && dir.exists()) {
                     hasExternalStorage = true;
+                    Log.d(TAG, "发现外部存储: " + dir.getAbsolutePath());
                     break;
                 }
             }
+            
+            Log.d(TAG, "存储设备数量: " + storageDirectories.size() + ", 有外部存储: " + hasExternalStorage);
             
             new Handler(Looper.getMainLooper()).post(() -> {
                 List<String> storageOptions = new ArrayList<>();
@@ -257,8 +260,13 @@ public class HomeFragment extends Fragment {
                 storageSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                     @Override
                     public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                        isInternalStorage = (position == 0);
-                        loadFiles(false); // 使用缓存
+                        boolean newStorageType = (position == 0);
+                        // 只有当存储类型真正改变时才重新加载
+                        if (newStorageType != isInternalStorage) {
+                            isInternalStorage = newStorageType;
+                            Log.d(TAG, "切换存储类型: " + (isInternalStorage ? "内部存储" : "外部存储"));
+                            loadFiles(false); // 使用缓存
+                        }
                     }
                     
                     @Override
@@ -577,27 +585,34 @@ public class HomeFragment extends Fragment {
             if (cachedFiles != null && !cachedFiles.isEmpty()) {
                 Log.d(TAG, "使用缓存数据: " + cachedFiles.size() + " 个文件");
                 
-                // 隐藏加载提示
-                if (loadingView != null) {
-                    loadingView.setVisibility(View.GONE);
-                }
-                
-                allVideoFiles = new ArrayList<>();
-                for (FileItem item : cachedFiles) {
-                    if (item.getFileType() == FileItem.FileType.VIDEO) {
-                        allVideoFiles.add(item);
+                // 在后台线程处理数据
+                new Thread(() -> {
+                    List<FileItem> videos = new ArrayList<>();
+                    for (FileItem item : cachedFiles) {
+                        if (item.getFileType() == FileItem.FileType.VIDEO) {
+                            videos.add(item);
+                        }
                     }
-                }
-                // 对视频列表按时间排序
-                Collections.sort(allVideoFiles, (o1, o2) -> Long.compare(o2.getLastModified(), o1.getLastModified()));
-                
-                allFiles = cachedFiles;
-                applyFilterAndSort();
-                
-                // 停止刷新动画
-                if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
-                    swipeRefreshLayout.setRefreshing(false);
-                }
+                    // 对视频列表按时间排序
+                    Collections.sort(videos, (o1, o2) -> Long.compare(o2.getLastModified(), o1.getLastModified()));
+                    
+                    // 回到主线程更新UI
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        allVideoFiles = videos;
+                        allFiles = cachedFiles;
+                        applyFilterAndSort();
+                        
+                        // 隐藏加载提示
+                        if (loadingView != null) {
+                            loadingView.setVisibility(View.GONE);
+                        }
+                        
+                        // 停止刷新动画
+                        if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
+                            swipeRefreshLayout.setRefreshing(false);
+                        }
+                    });
+                }).start();
                 
                 return;
             }
@@ -614,20 +629,18 @@ public class HomeFragment extends Fragment {
             List<File> targetDirectories = new ArrayList<>();
             
             // 根据选择的存储类型筛选目录
+            // 修复：使用 Environment.getExternalStorageDirectory() 作为主存储判断依据
+            File primaryStorage = Environment.getExternalStorageDirectory();
+            
             if (isInternalStorage) {
-                // 内部存储
-                File dataDir = Environment.getDataDirectory();
-                for (File dir : storageDirectories) {
-                    if (dir.equals(dataDir)) {
-                        targetDirectories.add(dir);
-                        break;
-                    }
+                // 内部存储（手机本机存储）
+                if (primaryStorage != null && primaryStorage.exists()) {
+                    targetDirectories.add(primaryStorage);
                 }
             } else {
-                // 外部存储（所有非内部存储的目录）
-                File dataDir = Environment.getDataDirectory();
+                // 外部存储（所有非主存储的目录，如U盘、SD卡）
                 for (File dir : storageDirectories) {
-                    if (!dir.equals(dataDir)) {
+                    if (!dir.equals(primaryStorage) && dir.exists()) {
                         targetDirectories.add(dir);
                     }
                 }
@@ -637,6 +650,8 @@ public class HomeFragment extends Fragment {
             if (targetDirectories.isEmpty()) {
                 targetDirectories = storageDirectories;
             }
+            
+            Log.d(TAG, "扫描目录: " + targetDirectories.size() + " 个, 类型: " + (isInternalStorage ? "内部存储" : "外部存储"));
             
             // 先扫描所有视频文件，用于播放列表
             List<FileItem> allVideos = FileUtils.scanAllFiles(targetDirectories, FileItem.FileType.VIDEO);
@@ -665,7 +680,8 @@ public class HomeFragment extends Fragment {
                     swipeRefreshLayout.setRefreshing(false);
                 }
                 
-                Toast.makeText(getContext(), "已加载 " + files.size() + " 个文件", Toast.LENGTH_SHORT).show();
+                String storageType = isInternalStorage ? "内部存储" : "外部存储";
+                Toast.makeText(getContext(), storageType + ": 已加载 " + files.size() + " 个文件", Toast.LENGTH_SHORT).show();
             });
         }).start();
     }
@@ -820,6 +836,51 @@ public class HomeFragment extends Fragment {
                     }
                 }
                 
+                // 如果删除成功，检查文件是否真的被删除了
+                if (deleted) {
+                    // 等待一小段时间，让系统完成删除操作
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        // 忽略
+                    }
+                    
+                    // 检查文件是否真的被删除了
+                    if (file.exists()) {
+                        // 文件仍然存在，可能是0字节占位文件
+                        Log.w(TAG, "deleteSelectedFiles: 文件删除后仍存在，尝试再次删除 - " + file.getName());
+                        
+                        // 再次尝试删除
+                        deleted = file.delete();
+                        
+                        // 再次检查
+                        if (file.exists()) {
+                            // 如果是0字节文件，也认为删除成功
+                            if (file.length() == 0) {
+                                Log.d(TAG, "deleteSelectedFiles: 删除成功（残留0字节文件已清理） - " + file.getName());
+                                deleted = true;
+                            } else {
+                                Log.e(TAG, "deleteSelectedFiles: 删除失败（文件仍然存在，大小: " + file.length() + " bytes） - " + file.getName());
+                                deleted = false;
+                            }
+                        }
+                    }
+                    
+                    // 通知媒体扫描器更新
+                    if (deleted) {
+                        try {
+                            android.media.MediaScannerConnection.scanFile(
+                                getContext(),
+                                new String[]{file.getAbsolutePath()},
+                                null,
+                                null
+                            );
+                        } catch (Exception e) {
+                            Log.w(TAG, "deleteSelectedFiles: 通知媒体扫描器失败", e);
+                        }
+                    }
+                }
+                
                 if (deleted) {
                     successCount++;
                     Log.d(TAG, "deleteSelectedFiles: 删除成功 - " + file.getName());
@@ -922,17 +983,50 @@ public class HomeFragment extends Fragment {
                 // 如果 MediaStore 删除返回0或失败，尝试直接删除
                 boolean directDeleted = file.delete();
                 Log.d(TAG, "deleteFileUsingMediaStore: 直接删除结果 - " + directDeleted);
+                
+                // 检查文件是否真的被删除了
+                if (directDeleted && file.exists()) {
+                    // 再次尝试删除
+                    directDeleted = file.delete();
+                    // 如果仍然存在但是0字节，也认为成功
+                    if (file.exists() && file.length() == 0) {
+                        directDeleted = true;
+                    }
+                }
+                
                 return directDeleted;
             } else {
                 Log.w(TAG, "deleteFileUsingMediaStore: 无法获取 MediaStore URI，尝试直接删除");
                 boolean directDeleted = file.delete();
                 Log.d(TAG, "deleteFileUsingMediaStore: 直接删除结果 - " + directDeleted);
+                
+                // 检查文件是否真的被删除了
+                if (directDeleted && file.exists()) {
+                    // 再次尝试删除
+                    directDeleted = file.delete();
+                    // 如果仍然存在但是0字节，也认为成功
+                    if (file.exists() && file.length() == 0) {
+                        directDeleted = true;
+                    }
+                }
+                
                 return directDeleted;
             }
         } catch (Exception e) {
             Log.e(TAG, "deleteFileUsingMediaStore: 删除异常", e);
             boolean directDeleted = file.delete();
             Log.d(TAG, "deleteFileUsingMediaStore: 异常后直接删除结果 - " + directDeleted);
+            
+            // 检查文件是否真的被删除了
+            if (directDeleted && file.exists()) {
+                // 再次尝试删除
+                directDeleted = file.delete();
+                // 如果仍然存在但是0字节，也认为成功
+                if (file.exists() && file.length() == 0) {
+                    directDeleted = true;
+                }
+            }
+            
             return directDeleted;
         }
     }

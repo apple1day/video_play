@@ -345,10 +345,49 @@ public class PendingDeleteManager {
             deleted = file.delete();
             
             if (deleted) {
+                // 等待一小段时间，让系统完成删除操作
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    // 忽略
+                }
+                
+                // 检查文件是否真的被删除了
+                if (file.exists()) {
+                    // 文件仍然存在，可能是0字节占位文件
+                    Log.w(TAG, "deleteFile: 文件删除后仍存在，尝试再次删除 - " + fileName);
+                    
+                    // 再次尝试删除
+                    deleted = file.delete();
+                    
+                    // 再次检查
+                    if (file.exists()) {
+                        // 如果是0字节文件，也认为删除成功
+                        if (file.length() == 0) {
+                            Log.d(TAG, "deleteFile: ✓ 删除成功（残留0字节文件已清理） - " + fileName);
+                            return new DeleteResult(true, "删除成功");
+                        } else {
+                            errorMessage = "删除失败（文件仍然存在，大小: " + file.length() + " bytes）";
+                            Log.e(TAG, "deleteFile: ✗ " + errorMessage + " - " + fileName);
+                            return new DeleteResult(false, errorMessage);
+                        }
+                    }
+                }
+                
                 Log.d(TAG, "deleteFile: ✓ 删除成功 - " + fileName);
+                
+                // 通知媒体扫描器更新
+                notifyMediaStoreDeleted(file);
+                
                 return new DeleteResult(true, "删除成功");
             } else {
                 // 删除失败，但没有抛出异常
+                // 检查文件是否已经不存在了
+                if (!file.exists()) {
+                    Log.d(TAG, "deleteFile: ✓ 文件已不存在 - " + fileName);
+                    return new DeleteResult(true, "删除成功");
+                }
+                
                 errorMessage = "删除失败（可能被其他程序占用或系统保护）";
                 Log.e(TAG, "deleteFile: ✗ " + errorMessage + " - " + fileName);
                 
@@ -377,6 +416,22 @@ public class PendingDeleteManager {
             Log.e(TAG, "deleteFile: " + errorMessage + " - " + fileName, e);
             e.printStackTrace();
             return new DeleteResult(false, errorMessage);
+        }
+    }
+    
+    /**
+     * 通知媒体扫描器文件已删除
+     */
+    private void notifyMediaStoreDeleted(File file) {
+        try {
+            android.media.MediaScannerConnection.scanFile(
+                context,
+                new String[]{file.getAbsolutePath()},
+                null,
+                null
+            );
+        } catch (Exception e) {
+            Log.w(TAG, "notifyMediaStoreDeleted: 通知媒体扫描器失败", e);
         }
     }
     

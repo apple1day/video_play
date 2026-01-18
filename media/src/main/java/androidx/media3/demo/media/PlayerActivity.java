@@ -84,19 +84,23 @@ public class PlayerActivity extends AppCompatActivity {
         
         // 延迟获取自定义控制器中的按钮
         playerView.post(() -> {
-            View controllerView = playerView.findViewById(R.id.top_controls);
-            if (controllerView != null) {
-                favoriteButton = controllerView.findViewById(R.id.favorite_button);
-                pendingDeleteButton = controllerView.findViewById(R.id.pending_delete_button);
-                
+            // 获取顶部的收藏按钮
+            View topControlsView = playerView.findViewById(R.id.top_controls);
+            if (topControlsView != null) {
+                favoriteButton = topControlsView.findViewById(R.id.favorite_button);
                 if (favoriteButton != null) {
                     favoriteButton.setOnClickListener(v -> toggleFavorite());
                 }
+                updateFavoriteButton();
+            }
+            
+            // 获取底部的删除按钮（现在在底部控制栏中）
+            View bottomBarView = playerView.findViewById(R.id.exo_bottom_bar);
+            if (bottomBarView != null) {
+                pendingDeleteButton = bottomBarView.findViewById(R.id.pending_delete_button);
                 if (pendingDeleteButton != null) {
                     pendingDeleteButton.setOnClickListener(v -> togglePendingDelete());
                 }
-                
-                updateFavoriteButton();
                 updatePendingDeleteButton();
             }
         });

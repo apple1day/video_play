@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
-    <!-- 顶部收藏和待删除按钮 -->
+    <!-- 顶部收藏按钮 -->
     <LinearLayout
         android:id="@+id/top_controls"
         android:layout_width="wrap_content"
@@ -25,20 +25,11 @@
             android:scaleType="fitCenter"
             android:contentDescription="@string/favorite" />
 
-        <ImageButton
-            android:id="@+id/pending_delete_button"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginStart="8dp"
-            android:src="@android:drawable/ic_menu_delete"
-            android:background="@android:color/transparent"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/pending_delete" />
-
     </LinearLayout>
 
-    <!-- 底部控制栏（包含播放按钮、进度条、上一个、下一个） -->
+    <!-- 底部控制栏（包含删除按钮、播放按钮、进度条、上一个、下一个） -->
     <LinearLayout
+        android:id="@+id/exo_bottom_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
@@ -56,6 +47,18 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingBottom="4dp">
+
+            <!-- 删除按钮（左侧） -->
+            <ImageButton
+                android:id="@+id/pending_delete_button"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="8dp"
+                android:src="@android:drawable/ic_menu_delete"
+                android:background="@android:color/transparent"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/pending_delete"
+                android:tint="#FFFFFF" />
 
             <TextView
                 android:id="@id/exo_position"

@@ -13,6 +13,8 @@
         app:use_controller="true"
         app:controller_layout_id="@layout/exo_player_control_view"
         app:show_buffering="when_playing"
+        app:show_timeout="3000"
+        app:hide_on_touch="false"
         app:shutter_background_color="#00000000" />
 
     <!-- 双击快进/快退提示 -->

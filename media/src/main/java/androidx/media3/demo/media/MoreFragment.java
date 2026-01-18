@@ -278,8 +278,52 @@ public class MoreFragment extends Fragment {
                         errorMessage = "父目录无写权限";
                     } else {
                         success = file.delete();
-                        if (!success) {
-                            errorMessage = "删除失败（可能被占用或系统保护）";
+                        if (success) {
+                            // 等待一小段时间，让系统完成删除操作
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                // 忽略
+                            }
+                            
+                            // 检查文件是否真的被删除了
+                            if (file.exists()) {
+                                // 文件仍然存在，可能是0字节占位文件
+                                // 再次尝试删除
+                                success = file.delete();
+                                
+                                // 再次检查
+                                if (file.exists()) {
+                                    // 如果是0字节文件，也认为删除成功
+                                    if (file.length() == 0) {
+                                        success = true;
+                                    } else {
+                                        success = false;
+                                        errorMessage = "删除失败（文件仍然存在）";
+                                    }
+                                }
+                            }
+                            
+                            // 通知媒体扫描器更新
+                            if (success && getContext() != null) {
+                                try {
+                                    android.media.MediaScannerConnection.scanFile(
+                                        getContext(),
+                                        new String[]{file.getAbsolutePath()},
+                                        null,
+                                        null
+                                    );
+                                } catch (Exception e) {
+                                    // 忽略扫描错误
+                                }
+                            }
+                        } else {
+                            // 检查文件是否已经不存在了
+                            if (!file.exists()) {
+                                success = true;
+                            } else {
+                                errorMessage = "删除失败（可能被占用或系统保护）";
+                            }
                         }
                     }
                 } else {
