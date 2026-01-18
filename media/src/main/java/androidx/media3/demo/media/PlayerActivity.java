@@ -181,39 +181,51 @@ public class PlayerActivity extends AppCompatActivity {
                 }
                 
                 int screenWidth = playerView.getWidth();
+                int screenHeight = playerView.getHeight();
                 float startX = e1.getX();
-                float deltaY = e1.getY() - e2.getY(); // 正值表示向上滑动
+                float totalDeltaX = e2.getX() - e1.getX(); // 水平总位移
+                float totalDeltaY = e1.getY() - e2.getY(); // 垂直总位移（正值表示向上）
+                
+                // 根据滑动距离判断是水平还是垂直操作
+                float absDeltaX = Math.abs(totalDeltaX);
+                float absDeltaY = Math.abs(totalDeltaY);
                 
                 // 将屏幕分为三部分：左(0-33%)、中(33%-67%)、右(67%-100%)
                 float leftBoundary = screenWidth * 0.33f;
                 float rightBoundary = screenWidth * 0.67f;
                 
-                if (startX < leftBoundary) {
-                    // 左侧 - 调节亮度
-                    adjustBrightness(deltaY);
-                } else if (startX > rightBoundary) {
-                    // 右侧 - 调节音量
-                    adjustVolume(deltaY);
-                } else {
-                    // 中间区域 - 切换视频（只在明显的垂直滑动时触发）
-                    if (Math.abs(distanceY) > Math.abs(distanceX) && Math.abs(deltaY) > 50) {
-                        if (deltaY > 0) {
-                            // 向上滑动 - 切换到下一个视频
-                            if (player != null && player.hasNextMediaItem()) {
-                                player.seekToNextMediaItem();
-                                showSeekOverlay("下一个视频 ▼");
+                // 垂直滑动优先（上下滑动距离明显大于左右）
+                if (absDeltaY > absDeltaX * 1.5f && absDeltaY > 30) {
+                    if (startX < leftBoundary) {
+                        // 左侧 - 调节亮度
+                        adjustBrightness(totalDeltaY, screenHeight);
+                        return true;
+                    } else if (startX > rightBoundary) {
+                        // 右侧 - 调节音量
+                        adjustVolume(totalDeltaY, screenHeight);
+                        return true;
+                    } else {
+                        // 中间区域 - 切换视频（需要更大的滑动距离）
+                        if (absDeltaY > 80) {
+                            if (totalDeltaY > 0) {
+                                // 向上滑动 - 切换到下一个视频
+                                if (player != null && player.hasNextMediaItem()) {
+                                    player.seekToNextMediaItem();
+                                    showSeekOverlay("下一个视频 ▼");
+                                }
+                            } else {
+                                // 向下滑动 - 切换到上一个视频
+                                if (player != null && player.hasPreviousMediaItem()) {
+                                    player.seekToPreviousMediaItem();
+                                    showSeekOverlay("上一个视频 ▲");
+                                }
                             }
-                        } else {
-                            // 向下滑动 - 切换到上一个视频
-                            if (player != null && player.hasPreviousMediaItem()) {
-                                player.seekToPreviousMediaItem();
-                                showSeekOverlay("上一个视频 ▲");
-                            }
+                            return true;
                         }
                     }
                 }
                 
-                return true;
+                return false;
             }
             
             @Override
@@ -272,28 +284,43 @@ public class PlayerActivity extends AppCompatActivity {
     }
     
     // 调节音量
-    private void adjustVolume(float deltaY) {
+    // deltaY: 滑动距离（正值表示向上）
+    // screenHeight: 屏幕高度
+    private void adjustVolume(float deltaY, int screenHeight) {
         int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
         int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
         
-        // deltaY > 0 表示向上滑动，增加音量
-        int volumeChange = (int) (deltaY / 30); // 调节灵敏度
+        // 滑动一个屏幕高度改变35%音量
+        // 计算音量变化：(滑动距离 / 屏幕高度) * 35% * 最大音量
+        float volumeChangePercent = (deltaY / screenHeight) * 0.35f;
+        int volumeChange = Math.round(volumeChangePercent * maxVolume);
         int newVolume = Math.max(0, Math.min(maxVolume, currentVolume + volumeChange));
         
         if (newVolume != currentVolume) {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0);
             int volumePercent = (int) (newVolume * 100.0f / maxVolume);
             showSeekOverlay("音量: " + volumePercent + "%");
+            isAdjustingVolume = true;
         }
     }
     
     // 调节亮度
-    private void adjustBrightness(float deltaY) {
+    // deltaY: 滑动距离（正值表示向上）
+    // screenHeight: 屏幕高度
+    private void adjustBrightness(float deltaY, int screenHeight) {
         WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
         
-        // deltaY > 0 表示向上滑动，增加亮度
-        float brightnessChange = deltaY / 1000; // 调节灵敏度
-        float newBrightness = layoutParams.screenBrightness + brightnessChange;
+        // 滑动一个屏幕高度改变35%亮度
+        // 计算亮度变化：(滑动距离 / 屏幕高度) * 0.35
+        float brightnessChange = (deltaY / screenHeight) * 0.35f;
+        
+        // 如果当前亮度为自动（-1），则从0.5开始
+        float currentBrightness = layoutParams.screenBrightness;
+        if (currentBrightness < 0) {
+            currentBrightness = 0.5f;
+        }
+        
+        float newBrightness = currentBrightness + brightnessChange;
         
         // 限制在0.01到1.0之间
         newBrightness = Math.max(0.01f, Math.min(1.0f, newBrightness));
@@ -304,6 +331,7 @@ public class PlayerActivity extends AppCompatActivity {
             
             int brightnessPercent = (int) (newBrightness * 100);
             showSeekOverlay("亮度: " + brightnessPercent + "%");
+            isAdjustingBrightness = true;
         }
     }
     
