@@ -30,6 +30,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     private Set<Integer> selectedPositions = new HashSet<>();
     private FavoriteManager favoriteManager;
     private PendingDeleteManager pendingDeleteManager;
+    private WatchedManager watchedManager;
     private Context context;
 
     public interface OnItemClickListener {
@@ -53,6 +54,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         this.context = context;
         this.favoriteManager = FavoriteManager.getInstance(context);
         this.pendingDeleteManager = PendingDeleteManager.getInstance(context);
+        this.watchedManager = WatchedManager.getInstance(context);
     }
 
     public void updateFiles(List<FileItem> newFiles) {
@@ -175,6 +177,35 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         }
     }
     
+    /**
+     * 选择所有已观看的文件
+     */
+    public void selectAllWatched() {
+        // 确保 watchedManager 已初始化
+        if (watchedManager == null && context != null) {
+            watchedManager = WatchedManager.getInstance(context);
+        }
+        
+        if (watchedManager == null) {
+            return;
+        }
+        
+        selectedPositions.clear();
+        for (int i = 0; i < files.size(); i++) {
+            FileItem item = files.get(i);
+            if (item.getFileType() == FileItem.FileType.VIDEO) {
+                String filePath = item.getFile().getAbsolutePath();
+                if (watchedManager.isWatched(filePath)) {
+                    selectedPositions.add(i);
+                }
+            }
+        }
+        notifyDataSetChanged();
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(selectedPositions.size());
+        }
+    }
+    
     public void clearSelection() {
         selectedPositions.clear();
         notifyDataSetChanged();
@@ -207,6 +238,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         context = parent.getContext();
         favoriteManager = FavoriteManager.getInstance(context);
         pendingDeleteManager = PendingDeleteManager.getInstance(context);
+        watchedManager = WatchedManager.getInstance(context);
         View view = LayoutInflater.from(context)
             .inflate(R.layout.item_file, parent, false);
         return new ViewHolder(view);
@@ -228,6 +260,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         private TextView fileName;
         private TextView fileInfo;
         private CheckBox checkBox;
+        private ImageView watchedIcon;
         private ImageView favoriteIcon;
         private ImageView pendingDeleteIcon;
 
@@ -237,6 +270,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             fileName = itemView.findViewById(R.id.file_name);
             fileInfo = itemView.findViewById(R.id.file_info);
             checkBox = itemView.findViewById(R.id.checkbox);
+            watchedIcon = itemView.findViewById(R.id.watched_icon);
             favoriteIcon = itemView.findViewById(R.id.favorite_icon);
             pendingDeleteIcon = itemView.findViewById(R.id.pending_delete_icon);
 
@@ -305,6 +339,22 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
             info.append(sdf.format(new Date(item.getLastModified())));
             fileInfo.setText(info.toString());
+            
+            // 设置已观看图标
+            if (watchedIcon != null && watchedManager != null) {
+                if (item.getFileType() == FileItem.FileType.VIDEO) {
+                    String filePath = item.getFile().getAbsolutePath();
+                    boolean isWatched = watchedManager.isWatched(filePath);
+                    if (isWatched) {
+                        watchedIcon.setVisibility(View.VISIBLE);
+                        watchedIcon.setColorFilter(Color.parseColor("#4CAF50"), PorterDuff.Mode.SRC_IN); // 绿色
+                    } else {
+                        watchedIcon.setVisibility(View.GONE);
+                    }
+                } else {
+                    watchedIcon.setVisibility(View.GONE);
+                }
+            }
             
             // 设置收藏图标
             if (favoriteIcon != null && favoriteManager != null) {

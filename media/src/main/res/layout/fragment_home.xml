@@ -117,81 +117,110 @@
         android:id="@+id/selection_toolbar_layout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:padding="8dp"
         android:layout_marginTop="16dp"
-        android:gravity="center_vertical"
         android:visibility="gone"
         android:background="@android:color/white">
 
-        <Button
-            android:id="@+id/select_all_button"
-            android:layout_width="wrap_content"
+        <!-- 第一行：选择按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:text="@string/select_all"
-            android:textSize="12sp"
-            android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
 
-        <Button
-            android:id="@+id/select_favorites_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:text="@string/select_all_favorites"
-            android:textSize="12sp"
-            android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            <Button
+                android:id="@+id/select_all_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:text="@string/select_all"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <Button
-            android:id="@+id/select_pending_deletes_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:text="@string/select_pending_deletes"
-            android:textSize="12sp"
-            android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            <Button
+                android:id="@+id/select_favorites_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:text="@string/select_all_favorites"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <TextView
-            android:id="@+id/selected_count_text"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/selected_count"
-            android:textSize="12sp"
-            android:gravity="center" />
+            <Button
+                android:id="@+id/select_watched_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:text="@string/select_watched"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <Button
-            android:id="@+id/delete_selected_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:text="@string/delete_selected"
-            android:textSize="12sp"
-            android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:textColor="@android:color/holo_red_dark"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            <Button
+                android:id="@+id/select_pending_deletes_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/select_pending_deletes"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
-        <Button
-            android:id="@+id/cancel_selection_button"
-            android:layout_width="wrap_content"
+        </LinearLayout>
+
+        <!-- 第二行：操作按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/cancel_selection"
-            android:textSize="12sp"
-            android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            style="@android:style/Widget.Material.Button.Borderless" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/selected_count_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/selected_count"
+                android:textSize="12sp"
+                android:gravity="start" />
+
+            <Button
+                android:id="@+id/delete_selected_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:text="@string/delete_selected"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:textColor="@android:color/holo_red_dark"
+                style="@android:style/Widget.Material.Button.Borderless" />
+
+            <Button
+                android:id="@+id/cancel_selection_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/cancel_selection"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
