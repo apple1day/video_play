@@ -120,6 +120,98 @@ public class FileUtils {
         return files;
     }
     
+    /**
+     * 异步扫描所有文件，支持增量回调
+     * @param storageDirectories 要扫描的存储目录列表
+     * @param filterType 文件类型过滤
+     * @param callback 增量回调接口
+     */
+    public static void scanAllFilesAsync(List<File> storageDirectories, FileItem.FileType filterType, ScanCallback callback) {
+        new Thread(() -> {
+            List<FileItem> allFiles = new ArrayList<>();
+            int batchSize = 20; // 每20个文件回调一次
+            
+            for (File directory : storageDirectories) {
+                List<FileItem> dirFiles = scanFilesIncremental(directory, filterType, callback, batchSize);
+                allFiles.addAll(dirFiles);
+            }
+            
+            // 最终回调
+            if (callback != null) {
+                callback.onScanComplete(allFiles);
+            }
+        }).start();
+    }
+    
+    /**
+     * 增量扫描文件
+     */
+    private static List<FileItem> scanFilesIncremental(File directory, FileItem.FileType filterType, 
+                                                       ScanCallback callback, int batchSize) {
+        List<FileItem> files = new ArrayList<>();
+        List<FileItem> batch = new ArrayList<>();
+        
+        if (directory == null || !directory.exists() || !directory.isDirectory()) {
+            return files;
+        }
+        
+        File[] fileList = directory.listFiles();
+        if (fileList == null) {
+            return files;
+        }
+        
+        for (File file : fileList) {
+            if (file.isHidden()) {
+                continue;
+            }
+            
+            if (file.isDirectory()) {
+                // 递归扫描子目录（子目录的文件会在递归中直接回调，不需要再次添加到batch）
+                List<FileItem> subFiles = scanFilesIncremental(file, filterType, callback, batchSize);
+                files.addAll(subFiles);
+            } else {
+                FileItem item = new FileItem(file);
+                if (filterType == null || filterType == FileItem.FileType.OTHER || 
+                    item.getFileType() == filterType) {
+                    files.add(item);
+                    batch.add(item);
+                    
+                    // 达到批次大小，触发回调
+                    if (batch.size() >= batchSize) {
+                        if (callback != null) {
+                            callback.onBatchLoaded(new ArrayList<>(batch));
+                        }
+                        batch.clear();
+                    }
+                }
+            }
+        }
+        
+        // 处理剩余的文件
+        if (!batch.isEmpty() && callback != null) {
+            callback.onBatchLoaded(new ArrayList<>(batch));
+        }
+        
+        return files;
+    }
+    
+    /**
+     * 文件扫描回调接口
+     */
+    public interface ScanCallback {
+        /**
+         * 每批文件加载完成时回调
+         * @param batch 本批加载的文件列表
+         */
+        void onBatchLoaded(List<FileItem> batch);
+        
+        /**
+         * 所有文件扫描完成时回调
+         * @param allFiles 所有文件列表
+         */
+        void onScanComplete(List<FileItem> allFiles);
+    }
+    
     public static List<FileItem> scanAllFiles(List<File> storageDirectories, FileItem.FileType filterType) {
         List<FileItem> allFiles = new ArrayList<>();
         for (File directory : storageDirectories) {

@@ -60,6 +60,18 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         selectedPositions.clear();
         notifyDataSetChanged();
     }
+    
+    /**
+     * 追加文件列表（用于分页加载）
+     */
+    public void appendFiles(List<FileItem> newFiles) {
+        if (newFiles == null || newFiles.isEmpty()) {
+            return;
+        }
+        int startPosition = this.files.size();
+        this.files.addAll(newFiles);
+        notifyItemRangeInserted(startPosition, newFiles.size());
+    }
 
     public List<FileItem> getFiles() {
         return files;
@@ -258,13 +270,16 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         public void bind(FileItem item, int position) {
             fileName.setText(item.getName());
             
+            // 先清除旧的图片加载请求，避免排序后图片错乱
+            ThumbnailLoader.clearThumbnail(context, icon);
+            
             // 设置图标/缩略图
             if (item.isDirectory()) {
                 icon.setImageResource(android.R.drawable.ic_dialog_info);
             } else {
                 switch (item.getFileType()) {
                     case VIDEO:
-                        // 为视频加载缩略图
+                        // 为视频加载缩略图（已优化，带缓存key）
                         ThumbnailLoader.loadThumbnail(context, item.getFile(), icon);
                         break;
                     case AUDIO:

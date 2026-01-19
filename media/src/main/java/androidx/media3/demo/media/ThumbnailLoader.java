@@ -9,6 +9,7 @@ import android.widget.ImageView;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.request.RequestOptions;
+import com.bumptech.glide.signature.ObjectKey;
 
 import java.io.File;
 
@@ -21,6 +22,7 @@ public class ThumbnailLoader {
     
     /**
      * 加载视频缩略图到ImageView
+     * 优化：使用文件路径作为签名，确保排序后缩略图正确更新
      * @param context 上下文
      * @param videoFile 视频文件
      * @param imageView 目标ImageView
@@ -31,21 +33,42 @@ public class ThumbnailLoader {
         }
         
         if (!videoFile.exists()) {
+            // 先清除之前的请求
+            Glide.with(context).clear(imageView);
             imageView.setImageResource(android.R.drawable.ic_menu_gallery);
             return;
         }
         
+        // 使用文件路径+修改时间作为缓存key，避免缓存混淆
+        String cacheKey = videoFile.getAbsolutePath() + "_" + videoFile.lastModified();
+        
         RequestOptions options = new RequestOptions()
                 .centerCrop()
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .diskCacheStrategy(DiskCacheStrategy.ALL) // 缓存所有版本
                 .placeholder(android.R.drawable.ic_menu_gallery)
-                .error(android.R.drawable.ic_menu_gallery);
+                .error(android.R.drawable.ic_menu_gallery)
+                .signature(new ObjectKey(cacheKey)) // 使用唯一签名避免缓存混淆
+                .override(300, 300); // 限制缩略图大小，加快加载速度
         
+        // 先清除ImageView上的旧请求，避免排序后图片错乱
+        Glide.with(context).clear(imageView);
+        
+        // 加载新缩略图
         Glide.with(context)
                 .asBitmap()
                 .load(videoFile)
                 .apply(options)
                 .into(imageView);
+    }
+    
+    /**
+     * 清除ImageView的缩略图加载请求
+     * 在ViewHolder回收或排序前调用
+     */
+    public static void clearThumbnail(Context context, ImageView imageView) {
+        if (context != null && imageView != null) {
+            Glide.with(context).clear(imageView);
+        }
     }
     
     /**

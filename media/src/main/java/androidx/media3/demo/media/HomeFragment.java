@@ -52,6 +52,7 @@ public class HomeFragment extends Fragment {
     private RecyclerView recyclerView;
     private TextView emptyView;
     private TextView loadingView;
+    private TextView loadingMoreView;
     private Spinner storageSpinner;
     private Button sortTimeButton;
     private Button sortSizeButton;
@@ -69,6 +70,7 @@ public class HomeFragment extends Fragment {
     private List<FileItem> allFiles = new ArrayList<>();
     private List<FileItem> allVideoFiles = new ArrayList<>(); // 存储所有视频文件
     private List<FileItem> displayedFiles = new ArrayList<>(); // 当前显示的视频列表（排序后）
+    private List<FileItem> filteredFiles = new ArrayList<>(); // 过滤排序后的完整列表
     private String currentSearchQuery = ""; // 当前搜索关键词
     private FileItem.FileType currentFilter = FileItem.FileType.VIDEO;
     private SortType currentSort = SortType.TIME;
@@ -79,6 +81,12 @@ public class HomeFragment extends Fragment {
     private Handler mainHandler;
     private PendingDeleteManager pendingDeleteManager;
     private FileListCacheManager cacheManager;
+    
+    // 分页相关
+    private static final int PAGE_SIZE = 100; // 每页加载100个
+    private int currentPage = 0; // 当前页码
+    private boolean isLoading = false; // 是否正在加载
+    private boolean hasMoreData = true; // 是否还有更多数据
     
     // 存储相关
     private List<File> storageDirectories = new ArrayList<>();
@@ -99,6 +107,7 @@ public class HomeFragment extends Fragment {
         recyclerView = view.findViewById(R.id.recycler_view);
         emptyView = view.findViewById(R.id.empty_view);
         loadingView = view.findViewById(R.id.loading_view);
+        loadingMoreView = view.findViewById(R.id.loading_more_view);
         storageSpinner = view.findViewById(R.id.storage_spinner);
         sortTimeButton = view.findViewById(R.id.sort_time_button);
         sortSizeButton = view.findViewById(R.id.sort_size_button);
@@ -137,6 +146,9 @@ public class HomeFragment extends Fragment {
 
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         recyclerView.setAdapter(adapter);
+        
+        // 设置上拉加载监听
+        setupRecyclerViewScrollListener();
         
         // 设置搜索框
         setupSearchView();
@@ -206,6 +218,38 @@ public class HomeFragment extends Fragment {
         });
     }
     
+    /**
+     * 设置RecyclerView滚动监听，实现上拉加载更多
+     */
+    private void setupRecyclerViewScrollListener() {
+        recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                
+                // 只有向下滚动才触发
+                if (dy <= 0) {
+                    return;
+                }
+                
+                LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
+                if (layoutManager == null) {
+                    return;
+                }
+                
+                int visibleItemCount = layoutManager.getChildCount();
+                int totalItemCount = layoutManager.getItemCount();
+                int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
+                
+                // 当滚动到底部附近（最后5个item）时加载更多
+                if (!isLoading && hasMoreData && 
+                    (visibleItemCount + firstVisibleItemPosition) >= totalItemCount - 5) {
+                    loadMoreData();
+                }
+            }
+        });
+    }
+    
     private void setupSwipeRefresh() {
         swipeRefreshLayout.setColorSchemeResources(
             android.R.color.holo_blue_bright,
@@ -215,7 +259,9 @@ public class HomeFragment extends Fragment {
         );
         
         swipeRefreshLayout.setOnRefreshListener(() -> {
-            // 下拉刷新时清除缓存并重新加载文件
+            // 下拉刷新时重置分页并重新加载
+            currentPage = 0;
+            hasMoreData = true;
             cacheManager.clearCache();
             Toast.makeText(getContext(), "正在刷新视频列表...", Toast.LENGTH_SHORT).show();
             loadFiles(true); // 强制重新扫描
@@ -493,8 +539,17 @@ public class HomeFragment extends Fragment {
                             allFiles, types[selectedIndex]);
                         
                         mainHandler.post(() -> {
-                            displayedFiles = new ArrayList<>(filtered);
-                            adapter.updateFiles(filtered);
+                            // 保存过滤排序后的完整列表
+                            filteredFiles = new ArrayList<>(filtered);
+                            
+                            // 重置分页状态，加载第一页
+                            currentPage = 0;
+                            hasMoreData = true;
+                            displayedFiles.clear();
+                            
+                            // 加载第一页数据
+                            loadPageData();
+                            
                             updateEmptyView();
                             Toast.makeText(getContext(), 
                                 "已筛选: " + options[selectedIndex] + " (" + filtered.size() + "个)", 
@@ -508,10 +563,9 @@ public class HomeFragment extends Fragment {
     
     private void applySmartFilter(SmartFilterHelper.FilterType filterType) {
         List<FileItem> filtered = SmartFilterHelper.smartFilter(allFiles, filterType);
-        displayedFiles = new ArrayList<>(filtered);
         
         // 应用排序
-        Collections.sort(displayedFiles, (o1, o2) -> {
+        Collections.sort(filtered, (o1, o2) -> {
             if (currentSort == SortType.TIME) {
                 if (timeSortDescending) {
                     return Long.compare(o2.getLastModified(), o1.getLastModified());
@@ -527,7 +581,17 @@ public class HomeFragment extends Fragment {
             }
         });
         
-        adapter.updateFiles(displayedFiles);
+        // 保存过滤排序后的完整列表
+        filteredFiles = new ArrayList<>(filtered);
+        
+        // 重置分页状态，加载第一页
+        currentPage = 0;
+        hasMoreData = true;
+        displayedFiles.clear();
+        
+        // 加载第一页数据
+        loadPageData();
+        
         updateEmptyView();
     }
     
@@ -537,7 +601,7 @@ public class HomeFragment extends Fragment {
     }
     
     private void updateEmptyView() {
-        if (displayedFiles.isEmpty()) {
+        if (filteredFiles.isEmpty()) {
             emptyView.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
         } else {
@@ -579,6 +643,11 @@ public class HomeFragment extends Fragment {
     }
 
     private void loadFiles(boolean forceRefresh) {
+        // 重置分页状态
+        currentPage = 0;
+        hasMoreData = true;
+        displayedFiles.clear();
+        
         // 如果不是强制刷新，先尝试从缓存加载
         if (!forceRefresh) {
             List<FileItem> cachedFiles = cacheManager.loadFileList(isInternalStorage);
@@ -600,7 +669,7 @@ public class HomeFragment extends Fragment {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         allVideoFiles = videos;
                         allFiles = cachedFiles;
-                        applyFilterAndSort();
+                        applyFilterAndSort(); // 这会触发第一页加载
                         
                         // 隐藏加载提示
                         if (loadingView != null) {
@@ -622,7 +691,7 @@ public class HomeFragment extends Fragment {
         if (loadingView != null) {
             loadingView.setVisibility(View.VISIBLE);
             emptyView.setVisibility(View.GONE);
-            recyclerView.setVisibility(View.GONE);
+            recyclerView.setVisibility(View.VISIBLE); // 立即显示RecyclerView，准备增量显示
         }
         
         new Thread(() -> {
@@ -653,40 +722,75 @@ public class HomeFragment extends Fragment {
             
             Log.d(TAG, "扫描目录: " + targetDirectories.size() + " 个, 类型: " + (isInternalStorage ? "内部存储" : "外部存储"));
             
-            // 先扫描所有视频文件，用于播放列表
-            List<FileItem> allVideos = FileUtils.scanAllFiles(targetDirectories, FileItem.FileType.VIDEO);
-            // 对视频列表按时间排序（用于播放顺序）
-            Collections.sort(allVideos, (o1, o2) -> Long.compare(o2.getLastModified(), o1.getLastModified()));
+            // 使用异步增量加载，边扫描边显示
+            final List<FileItem> allScannedFiles = new ArrayList<>();
+            final List<FileItem> allScannedVideos = new ArrayList<>();
             
-            // 再根据当前筛选条件扫描文件，用于显示
-            List<FileItem> files = FileUtils.scanAllFiles(targetDirectories, currentFilter);
-            
-            new Handler(Looper.getMainLooper()).post(() -> {
-                allVideoFiles = allVideos; // 保存所有视频文件（已排序）
-                allFiles = files; // 保存当前筛选的文件
-                
-                // 保存到缓存
-                cacheManager.saveFileList(files, isInternalStorage);
-                
-                applyFilterAndSort();
-                
-                // 隐藏加载提示
-                if (loadingView != null) {
-                    loadingView.setVisibility(View.GONE);
+            FileUtils.scanAllFilesAsync(targetDirectories, currentFilter, new FileUtils.ScanCallback() {
+                @Override
+                public void onBatchLoaded(List<FileItem> batch) {
+                    // 每批文件加载完成，立即在主线程更新UI
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        synchronized (allScannedFiles) {
+                            allScannedFiles.addAll(batch);
+                            
+                            // 提取视频文件
+                            for (FileItem item : batch) {
+                                if (item.getFileType() == FileItem.FileType.VIDEO) {
+                                    allScannedVideos.add(item);
+                                }
+                            }
+                            
+                            // 更新UI显示
+                            allFiles = new ArrayList<>(allScannedFiles);
+                            allVideoFiles = new ArrayList<>(allScannedVideos);
+                            applyFilterAndSort();
+                            
+                            Log.d(TAG, "已加载 " + allScannedFiles.size() + " 个文件（增量更新）");
+                        }
+                    });
                 }
                 
-                // 停止刷新动画
-                if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
-                    swipeRefreshLayout.setRefreshing(false);
+                @Override
+                public void onScanComplete(List<FileItem> allFiles) {
+                    // 所有文件扫描完成
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        // 对视频列表按时间排序（用于播放顺序）
+                        Collections.sort(allScannedVideos, (o1, o2) -> 
+                            Long.compare(o2.getLastModified(), o1.getLastModified()));
+                        
+                        allVideoFiles = new ArrayList<>(allScannedVideos);
+                        
+                        // 保存到缓存
+                        cacheManager.saveFileList(allScannedFiles, isInternalStorage);
+                        
+                        // 最后一次排序和过滤
+                        applyFilterAndSort();
+                        
+                        // 隐藏加载提示
+                        if (loadingView != null) {
+                            loadingView.setVisibility(View.GONE);
+                        }
+                        
+                        // 停止刷新动画
+                        if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
+                            swipeRefreshLayout.setRefreshing(false);
+                        }
+                        
+                        String storageType = isInternalStorage ? "内部存储" : "外部存储";
+                        Toast.makeText(getContext(), storageType + ": 已加载 " + allScannedFiles.size() + " 个文件", 
+                            Toast.LENGTH_SHORT).show();
+                        
+                        Log.d(TAG, "扫描完成: 总共 " + allScannedFiles.size() + " 个文件，" + 
+                            allScannedVideos.size() + " 个视频");
+                    });
                 }
-                
-                String storageType = isInternalStorage ? "内部存储" : "外部存储";
-                Toast.makeText(getContext(), storageType + ": 已加载 " + files.size() + " 个文件", Toast.LENGTH_SHORT).show();
             });
         }).start();
     }
 
     private void applyFilterAndSort() {
+        // 过滤
         List<FileItem> filtered = new ArrayList<>();
         for (FileItem item : allFiles) {
             if (currentFilter == null || item.getFileType() == currentFilter) {
@@ -698,6 +802,7 @@ public class HomeFragment extends Fragment {
             }
         }
 
+        // 排序
         Collections.sort(filtered, (o1, o2) -> {
             if (currentSort == SortType.TIME) {
                 if (timeSortDescending) {
@@ -714,18 +819,106 @@ public class HomeFragment extends Fragment {
             }
         });
 
-        // 保存当前显示的文件列表（用于播放器）
-        displayedFiles = new ArrayList<>(filtered);
+        // 保存过滤排序后的完整列表
+        filteredFiles = new ArrayList<>(filtered);
         
-        adapter.updateFiles(filtered);
+        // 重置分页状态，加载第一页
+        currentPage = 0;
+        hasMoreData = true;
+        displayedFiles.clear();
         
-        if (filtered.isEmpty()) {
+        // 加载第一页数据
+        loadPageData();
+        
+        if (filteredFiles.isEmpty()) {
             emptyView.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
         } else {
             emptyView.setVisibility(View.GONE);
             recyclerView.setVisibility(View.VISIBLE);
         }
+    }
+    
+    /**
+     * 加载一页数据（首次加载）
+     */
+    private void loadPageData() {
+        int startIndex = currentPage * PAGE_SIZE;
+        int endIndex = Math.min(startIndex + PAGE_SIZE, filteredFiles.size());
+        
+        if (startIndex >= filteredFiles.size()) {
+            hasMoreData = false;
+            return;
+        }
+        
+        List<FileItem> pageData = filteredFiles.subList(startIndex, endIndex);
+        displayedFiles.addAll(pageData);
+        
+        adapter.updateFiles(new ArrayList<>(displayedFiles));
+        
+        currentPage++;
+        hasMoreData = endIndex < filteredFiles.size();
+        
+        Log.d(TAG, "加载第 " + currentPage + " 页，显示 " + displayedFiles.size() + 
+            "/" + filteredFiles.size() + " 个文件");
+    }
+    
+    /**
+     * 加载更多数据（上拉加载）
+     */
+    private void loadMoreData() {
+        if (isLoading || !hasMoreData) {
+            return;
+        }
+        
+        isLoading = true;
+        
+        // 显示加载提示
+        if (loadingMoreView != null) {
+            loadingMoreView.setVisibility(View.VISIBLE);
+        }
+        
+        Log.d(TAG, "开始加载更多数据...");
+        
+        // 在后台线程处理以避免卡顿
+        new Thread(() -> {
+            int startIndex = currentPage * PAGE_SIZE;
+            int endIndex = Math.min(startIndex + PAGE_SIZE, filteredFiles.size());
+            
+            if (startIndex >= filteredFiles.size()) {
+                mainHandler.post(() -> {
+                    hasMoreData = false;
+                    isLoading = false;
+                    if (loadingMoreView != null) {
+                        loadingMoreView.setVisibility(View.GONE);
+                    }
+                });
+                return;
+            }
+            
+            List<FileItem> pageData = new ArrayList<>(filteredFiles.subList(startIndex, endIndex));
+            
+            mainHandler.post(() -> {
+                displayedFiles.addAll(pageData);
+                adapter.appendFiles(pageData);
+                
+                currentPage++;
+                hasMoreData = endIndex < filteredFiles.size();
+                isLoading = false;
+                
+                // 隐藏加载提示
+                if (loadingMoreView != null) {
+                    loadingMoreView.setVisibility(View.GONE);
+                }
+                
+                Log.d(TAG, "加载更多完成，当前显示 " + displayedFiles.size() + 
+                    "/" + filteredFiles.size() + " 个文件");
+                
+                if (!hasMoreData) {
+                    Toast.makeText(getContext(), "已加载全部视频", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).start();
     }
 
     /**

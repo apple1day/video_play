@@ -85,12 +85,20 @@ public class PendingDeleteManager {
             while (pendingFiles.size() > maxCount && !pendingFiles.isEmpty()) {
                 // 删除最早添加的文件（同步删除）
                 String firstFile = pendingFiles.iterator().next();
-                pendingFiles.remove(firstFile);
                 
                 // 立即删除文件
                 DeleteResult result = deleteFileSync(firstFile);
                 Log.d(TAG, "addPendingDelete: 超过最大数量，删除文件 " + new File(firstFile).getName() 
                     + ", 结果: " + result.success + ", 原因: " + result.errorMessage);
+                
+                // 只有删除成功才从待删除列表中移除
+                if (result.success) {
+                    pendingFiles.remove(firstFile);
+                } else {
+                    // 删除失败，保留待删除标记，但需要跳出循环避免死循环
+                    Log.w(TAG, "addPendingDelete: 删除失败，保留待删除标记 - " + new File(firstFile).getName());
+                    break;
+                }
                 
                 // 通知监听器
                 if (onFileDeletedListener != null) {
@@ -162,21 +170,24 @@ public class PendingDeleteManager {
             int successCount = 0;
             int failCount = 0;
             List<String> failedFiles = new ArrayList<>();
+            List<String> failedFilePaths = new ArrayList<>();
             
             for (String filePath : pendingFiles) {
                 DeleteResult result = deleteFileSync(filePath);
                 if (result.success) {
                     successCount++;
+                    // 删除成功，从待删除列表中移除
+                    removePendingDelete(filePath);
                 } else {
                     failCount++;
                     failedFiles.add(new File(filePath).getName() + ": " + result.errorMessage);
+                    failedFilePaths.add(filePath);
+                    // 删除失败，保留待删除标记
+                    Log.w(TAG, "deleteAllPending: 删除失败，保留待删除标记 - " + new File(filePath).getName());
                 }
                 Log.d(TAG, "deleteAllPending: " + new File(filePath).getName() 
                     + ", 成功: " + result.success + ", 原因: " + result.errorMessage);
             }
-            
-            // 清空待删除列表
-            clearAllPending();
             
             // 在主线程回调和显示结果
             final int finalSuccessCount = successCount;
@@ -192,13 +203,13 @@ public class PendingDeleteManager {
                 StringBuilder message = new StringBuilder();
                 message.append("删除完成：成功 ").append(finalSuccessCount).append(" 个");
                 if (finalFailCount > 0) {
-                    message.append("，失败 ").append(finalFailCount).append(" 个");
+                    message.append("，失败 ").append(finalFailCount).append(" 个（保留待删除标记）");
                 }
                 Toast.makeText(context, message.toString(), Toast.LENGTH_LONG).show();
                 
                 // 如果有失败的文件，记录详细信息
                 if (!finalFailedFiles.isEmpty()) {
-                    Log.e(TAG, "删除失败的文件：");
+                    Log.e(TAG, "删除失败的文件（已保留待删除标记）：");
                     for (String failInfo : finalFailedFiles) {
                         Log.e(TAG, "  - " + failInfo);
                     }
@@ -235,12 +246,20 @@ public class PendingDeleteManager {
         while (pendingFiles.size() > count && !pendingFiles.isEmpty()) {
             // 删除最早添加的文件（同步删除）
             String firstFile = pendingFiles.iterator().next();
-            pendingFiles.remove(firstFile);
             
             // 立即删除文件
             DeleteResult result = deleteFileSync(firstFile);
             Log.d(TAG, "setMaxPendingCount: 超过新的最大值，删除文件 " + new File(firstFile).getName() 
                 + ", 结果: " + result.success + ", 原因: " + result.errorMessage);
+            
+            // 只有删除成功才从待删除列表中移除
+            if (result.success) {
+                pendingFiles.remove(firstFile);
+            } else {
+                // 删除失败，保留待删除标记，但需要跳出循环避免死循环
+                Log.w(TAG, "setMaxPendingCount: 删除失败，保留待删除标记 - " + new File(firstFile).getName());
+                break;
+            }
             
             // 通知监听器
             if (onFileDeletedListener != null) {
