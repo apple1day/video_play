@@ -41,6 +41,7 @@ public class PlayerActivity extends AppCompatActivity {
     private FavoriteManager favoriteManager;
     private PendingDeleteManager pendingDeleteManager;
     private PlayHistoryManager playHistoryManager;
+    private WatchedManager watchedManager;
     private GestureDetector gestureDetector;
     private TextView seekOverlay;
     private View gestureHintOverlay;
@@ -66,6 +67,7 @@ public class PlayerActivity extends AppCompatActivity {
         favoriteManager = FavoriteManager.getInstance(this);
         pendingDeleteManager = PendingDeleteManager.getInstance(this);
         playHistoryManager = PlayHistoryManager.getInstance(this);
+        watchedManager = WatchedManager.getInstance(this);
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         
         Intent intent = getIntent();
@@ -490,13 +492,19 @@ public class PlayerActivity extends AppCompatActivity {
                 // 当切换到新的视频时，更新当前索引和文件路径
                 if (player.getCurrentMediaItemIndex() >= 0 && 
                     player.getCurrentMediaItemIndex() < fileList.size()) {
-                    // 保存旧视频的播放位置
+                    // 保存旧视频的播放位置，并检查是否已观看
                     if (currentFilePath != null && player.getDuration() > 0) {
+                        long position = player.getCurrentPosition();
+                        long duration = player.getDuration();
+                        
                         playHistoryManager.savePlayPosition(
                             currentFilePath, 
-                            player.getCurrentPosition(),
-                            player.getDuration()
+                            position,
+                            duration
                         );
+                        
+                        // 检查并标记为已观看（播放超过80%自动标记）
+                        watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
                     }
                     
                     // 更新当前视频
@@ -510,9 +518,81 @@ public class PlayerActivity extends AppCompatActivity {
                     if (savedPosition > 0) {
                         player.seekTo(savedPosition);
                     }
+                    
+                    // 检查是否需要预加载更多视频
+                    checkAndRequestMoreVideos();
                 }
             }
         });
+    }
+    
+    /**
+     * 检查并请求加载更多视频
+     * 当播放到接近列表末尾（倒数20个）时，自动请求加载
+     */
+    private void checkAndRequestMoreVideos() {
+        if (fileList == null || currentIndex < 0) {
+            return;
+        }
+        
+        // 获取 HomeFragment 的监听器
+        HomeFragment.VideoListLoadListener listener = HomeFragment.getVideoListLoadListener();
+        if (listener == null) {
+            return;
+        }
+        
+        // 当播放到倒数20个视频时，触发加载更多
+        int remainingVideos = fileList.size() - currentIndex;
+        if (remainingVideos <= 20) {
+            android.util.Log.d(TAG, "接近列表末尾（剩余 " + remainingVideos + " 个），请求加载更多");
+            
+            // 请求加载更多
+            listener.onRequestLoadMore();
+            
+            // 延迟500ms后更新播放列表
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                updatePlaylistFromHomeFragment();
+            }, 500);
+        }
+    }
+    
+    /**
+     * 从 HomeFragment 更新播放列表
+     */
+    private void updatePlaylistFromHomeFragment() {
+        HomeFragment.VideoListLoadListener listener = HomeFragment.getVideoListLoadListener();
+        if (listener == null || player == null) {
+            return;
+        }
+        
+        // 获取最新的视频列表
+        ArrayList<String> newVideoList = listener.getCurrentVideoList();
+        if (newVideoList == null || newVideoList.size() <= fileList.size()) {
+            return; // 没有新数据
+        }
+        
+        android.util.Log.d(TAG, "更新播放列表：从 " + fileList.size() + " 个增加到 " + newVideoList.size() + " 个");
+        
+        // 提取新增的视频
+        List<String> newVideos = newVideoList.subList(fileList.size(), newVideoList.size());
+        
+        // 将新视频转换为 MediaItem
+        List<MediaItem> newMediaItems = new ArrayList<>();
+        for (String filePath : newVideos) {
+            java.io.File file = new java.io.File(filePath);
+            if (file.exists()) {
+                newMediaItems.add(MediaItem.fromUri(Uri.fromFile(file)));
+            }
+        }
+        
+        if (!newMediaItems.isEmpty()) {
+            // 添加到播放列表
+            player.addMediaItems(newMediaItems);
+            fileList.addAll(newVideos);
+            
+            android.util.Log.d(TAG, "成功添加 " + newMediaItems.size() + " 个新视频到播放列表");
+            Toast.makeText(this, "已加载 " + newMediaItems.size() + " 个新视频", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void playNext() {
@@ -605,13 +685,19 @@ public class PlayerActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         
-        // 保存播放位置
+        // 保存播放位置，并检查是否已观看
         if (player != null && currentFilePath != null && player.getDuration() > 0) {
+            long position = player.getCurrentPosition();
+            long duration = player.getDuration();
+            
             playHistoryManager.savePlayPosition(
                 currentFilePath,
-                player.getCurrentPosition(),
-                player.getDuration()
+                position,
+                duration
             );
+            
+            // 检查并标记为已观看（播放超过80%自动标记）
+            watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
         }
         
         if (player != null) {

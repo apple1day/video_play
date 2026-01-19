@@ -62,6 +62,7 @@ public class HomeFragment extends Fragment {
     private View selectionToolbarLayout;
     private Button selectAllButton;
     private Button selectFavoritesButton;
+    private Button selectWatchedButton;
     private Button selectPendingDeletesButton;
     private Button deleteSelectedButton;
     private Button cancelSelectionButton;
@@ -87,6 +88,17 @@ public class HomeFragment extends Fragment {
     private int currentPage = 0; // 当前页码
     private boolean isLoading = false; // 是否正在加载
     private boolean hasMoreData = true; // 是否还有更多数据
+    
+    // 视频列表监听器（用于播放器预加载）
+    private static VideoListLoadListener videoListLoadListener;
+    
+    /**
+     * 视频列表加载监听器接口
+     */
+    public interface VideoListLoadListener {
+        void onRequestLoadMore();
+        ArrayList<String> getCurrentVideoList();
+    }
     
     // 存储相关
     private List<File> storageDirectories = new ArrayList<>();
@@ -117,6 +129,7 @@ public class HomeFragment extends Fragment {
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
         selectAllButton = view.findViewById(R.id.select_all_button);
         selectFavoritesButton = view.findViewById(R.id.select_favorites_button);
+        selectWatchedButton = view.findViewById(R.id.select_watched_button);
         selectPendingDeletesButton = view.findViewById(R.id.select_pending_deletes_button);
         deleteSelectedButton = view.findViewById(R.id.delete_selected_button);
         cancelSelectionButton = view.findViewById(R.id.cancel_selection_button);
@@ -185,6 +198,24 @@ public class HomeFragment extends Fragment {
                 // Toast提示已在PendingDeleteManager中显示
             }
         });
+        
+        // 注册视频列表监听器，供 PlayerActivity 使用
+        videoListLoadListener = new VideoListLoadListener() {
+            @Override
+            public void onRequestLoadMore() {
+                // PlayerActivity 请求加载更多
+                Log.d(TAG, "PlayerActivity 请求加载更多数据");
+                if (hasMoreData && !isLoading) {
+                    loadMoreData();
+                }
+            }
+            
+            @Override
+            public ArrayList<String> getCurrentVideoList() {
+                // 返回当前已加载的视频列表
+                return getCurrentDisplayedVideoList();
+            }
+        };
 
         if (PermissionHelper.hasMediaPermissions(getActivity())) {
             loadFiles();
@@ -351,6 +382,11 @@ public class HomeFragment extends Fragment {
         
         selectFavoritesButton.setOnClickListener(v -> {
             adapter.selectAllFavorites();
+            // updateSelectionUI 会在 listener 回调中自动调用
+        });
+        
+        selectWatchedButton.setOnClickListener(v -> {
+            adapter.selectAllWatched();
             // updateSelectionUI 会在 listener 回调中自动调用
         });
         
@@ -1301,6 +1337,15 @@ public class HomeFragment extends Fragment {
         if (pendingDeleteManager != null) {
             pendingDeleteManager.setOnFileDeletedListener(null);
         }
+        // 清除视频列表监听器
+        videoListLoadListener = null;
+    }
+    
+    /**
+     * 获取视频列表监听器（供 PlayerActivity 使用）
+     */
+    public static VideoListLoadListener getVideoListLoadListener() {
+        return videoListLoadListener;
     }
 }
 
