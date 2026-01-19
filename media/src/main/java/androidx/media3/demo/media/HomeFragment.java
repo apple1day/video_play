@@ -56,6 +56,8 @@ public class HomeFragment extends Fragment {
     private Spinner storageSpinner;
     private Button sortTimeButton;
     private Button sortSizeButton;
+    private Button filterWatchedButton;
+    private Button filterUnwatchedButton;
     private Button viewToggleButton;
     private Button smartFilterButton;
     private View toolbarLayout;
@@ -123,6 +125,8 @@ public class HomeFragment extends Fragment {
         storageSpinner = view.findViewById(R.id.storage_spinner);
         sortTimeButton = view.findViewById(R.id.sort_time_button);
         sortSizeButton = view.findViewById(R.id.sort_size_button);
+        filterWatchedButton = view.findViewById(R.id.filter_watched_button);
+        filterUnwatchedButton = view.findViewById(R.id.filter_unwatched_button);
         viewToggleButton = view.findViewById(R.id.view_toggle_button);
         smartFilterButton = view.findViewById(R.id.smart_filter_button);
         toolbarLayout = view.findViewById(R.id.toolbar_layout);
@@ -169,6 +173,7 @@ public class HomeFragment extends Fragment {
         setupSwipeRefresh();
         setupStorageSpinner();
         setupSortButtons();
+        setupWatchedFilterButtons();
         setupViewToggleButton();
         setupSmartFilterButton();
         setupSelectionButtons();
@@ -449,6 +454,20 @@ public class HomeFragment extends Fragment {
             applyFilterAndSort();
         });
     }
+    
+    private void setupWatchedFilterButtons() {
+        // 设置"已看"按钮
+        filterWatchedButton.setOnClickListener(v -> {
+            filterByWatchedStatus(true);
+            Toast.makeText(getContext(), "已筛选: 已看过的视频", Toast.LENGTH_SHORT).show();
+        });
+        
+        // 设置"未看"按钮
+        filterUnwatchedButton.setOnClickListener(v -> {
+            filterByWatchedStatus(false);
+            Toast.makeText(getContext(), "已筛选: 未看过的视频", Toast.LENGTH_SHORT).show();
+        });
+    }
 
     private void updateSortTimeButtonIcon() {
         int iconRes = timeSortDescending 
@@ -484,6 +503,7 @@ public class HomeFragment extends Fragment {
             "按大小筛选",
             "按时间筛选",
             "按时长筛选（较慢）",
+            "按观看状态筛选",
             "清除筛选"
         };
         
@@ -501,6 +521,9 @@ public class HomeFragment extends Fragment {
                         showDurationFilterDialog();
                         break;
                     case 3:
+                        showWatchedStatusFilterDialog();
+                        break;
+                    case 4:
                         clearFilter();
                         break;
                 }
@@ -599,6 +622,85 @@ public class HomeFragment extends Fragment {
     
     private void applySmartFilter(SmartFilterHelper.FilterType filterType) {
         List<FileItem> filtered = SmartFilterHelper.smartFilter(allFiles, filterType);
+        
+        // 应用排序
+        Collections.sort(filtered, (o1, o2) -> {
+            if (currentSort == SortType.TIME) {
+                if (timeSortDescending) {
+                    return Long.compare(o2.getLastModified(), o1.getLastModified());
+                } else {
+                    return Long.compare(o1.getLastModified(), o2.getLastModified());
+                }
+            } else {
+                if (sizeSortDescending) {
+                    return Long.compare(o2.getSize(), o1.getSize());
+                } else {
+                    return Long.compare(o1.getSize(), o2.getSize());
+                }
+            }
+        });
+        
+        // 保存过滤排序后的完整列表
+        filteredFiles = new ArrayList<>(filtered);
+        
+        // 重置分页状态，加载第一页
+        currentPage = 0;
+        hasMoreData = true;
+        displayedFiles.clear();
+        
+        // 加载第一页数据
+        loadPageData();
+        
+        updateEmptyView();
+    }
+    
+    private void showWatchedStatusFilterDialog() {
+        String[] options = new String[]{
+            "全部视频",
+            "未看过的视频",
+            "已看过的视频"
+        };
+        
+        new AlertDialog.Builder(getContext())
+            .setTitle("按观看状态筛选")
+            .setItems(options, (dialog, which) -> {
+                if (which == 0) {
+                    applyFilterAndSort();
+                } else if (which == 1) {
+                    // 筛选未看过的视频
+                    filterByWatchedStatus(false);
+                } else if (which == 2) {
+                    // 筛选已看过的视频
+                    filterByWatchedStatus(true);
+                }
+                Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+            })
+            .show();
+    }
+    
+    /**
+     * 根据观看状态筛选视频
+     * @param watchedOnly true=只显示已看过的，false=只显示未看过的
+     */
+    private void filterByWatchedStatus(boolean watchedOnly) {
+        WatchedManager watchedManager = WatchedManager.getInstance(getContext());
+        
+        List<FileItem> filtered = new ArrayList<>();
+        for (FileItem item : allFiles) {
+            if (item.getFileType() == FileItem.FileType.VIDEO) {
+                String filePath = item.getFile().getAbsolutePath();
+                boolean isWatched = watchedManager.isWatched(filePath);
+                
+                // 应用搜索过滤
+                boolean matchesSearch = TextUtils.isEmpty(currentSearchQuery) || 
+                    item.getName().toLowerCase().contains(currentSearchQuery.toLowerCase());
+                
+                // 根据筛选条件决定是否添加
+                if (matchesSearch && ((watchedOnly && isWatched) || (!watchedOnly && !isWatched))) {
+                    filtered.add(item);
+                }
+            }
+        }
         
         // 应用排序
         Collections.sort(filtered, (o1, o2) -> {

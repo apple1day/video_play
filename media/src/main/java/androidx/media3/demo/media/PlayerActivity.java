@@ -455,6 +455,11 @@ public class PlayerActivity extends AppCompatActivity {
         player.setMediaItems(mediaItems, currentIndex, 0);
         player.prepare();
         
+        // 打开视频时立即标记为已观看
+        if (currentFilePath != null) {
+            watchedManager.markAsWatched(currentFilePath);
+        }
+        
         // 恢复播放位置（如果有历史记录）
         long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
         if (savedPosition > 0) {
@@ -512,6 +517,11 @@ public class PlayerActivity extends AppCompatActivity {
                     currentFilePath = fileList.get(currentIndex);
                     updateFavoriteButton();
                     updatePendingDeleteButton();
+                    
+                    // 切换到新视频时立即标记为已观看
+                    if (currentFilePath != null) {
+                        watchedManager.markAsWatched(currentFilePath);
+                    }
                     
                     // 恢复新视频的播放位置
                     long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
