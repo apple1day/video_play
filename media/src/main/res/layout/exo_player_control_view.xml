@@ -6,16 +6,32 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
-    <!-- 顶部收藏按钮 -->
+    <!-- 顶部控制按钮 -->
     <LinearLayout
         android:id="@+id/top_controls"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="left|top"
+        android:layout_gravity="top"
         android:layout_margin="16dp"
         android:orientation="horizontal"
         android:background="@android:color/transparent">
 
+        <!-- 返回按钮 -->
+        <ImageButton
+            android:id="@+id/back_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_revert"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:contentDescription="返回" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- 收藏按钮 -->
         <ImageButton
             android:id="@+id/favorite_button"
             android:layout_width="56dp"

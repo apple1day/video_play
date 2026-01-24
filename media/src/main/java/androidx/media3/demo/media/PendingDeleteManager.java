@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.Gravity;
 import android.widget.Toast;
 
 import java.io.File;
@@ -199,13 +200,15 @@ public class PendingDeleteManager {
                     onFileDeletedListener.onFilesDeleted(finalSuccessCount, finalFailCount, finalFailedFiles);
                 }
                 
-                // 显示删除结果
+                // 显示删除结果（顶部弹窗）
                 StringBuilder message = new StringBuilder();
                 message.append("删除完成：成功 ").append(finalSuccessCount).append(" 个");
                 if (finalFailCount > 0) {
-                    message.append("，失败 ").append(finalFailCount).append(" 个（保留待删除标记）");
+                    message.append("，失败 ").append(finalFailCount).append(" 个");
                 }
-                Toast.makeText(context, message.toString(), Toast.LENGTH_LONG).show();
+                Toast toast = Toast.makeText(context, message.toString(), Toast.LENGTH_LONG);
+                toast.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 100);
+                toast.show();
                 
                 // 如果有失败的文件，记录详细信息
                 if (!finalFailedFiles.isEmpty()) {
@@ -374,22 +377,64 @@ public class PendingDeleteManager {
                 // 检查文件是否真的被删除了
                 if (file.exists()) {
                     // 文件仍然存在，可能是0字节占位文件
-                    Log.w(TAG, "deleteFile: 文件删除后仍存在，尝试再次删除 - " + fileName);
+                    Log.w(TAG, "deleteFile: 文件删除后仍存在，尝试强制清理 - " + fileName);
                     
-                    // 再次尝试删除
-                    deleted = file.delete();
-                    
-                    // 再次检查
-                    if (file.exists()) {
-                        // 如果是0字节文件，也认为删除成功
-                        if (file.length() == 0) {
-                            Log.d(TAG, "deleteFile: ✓ 删除成功（残留0字节文件已清理） - " + fileName);
-                            return new DeleteResult(true, "删除成功");
-                        } else {
-                            errorMessage = "删除失败（文件仍然存在，大小: " + file.length() + " bytes）";
-                            Log.e(TAG, "deleteFile: ✗ " + errorMessage + " - " + fileName);
-                            return new DeleteResult(false, errorMessage);
+                    // 如果是0字节文件，尝试多次删除
+                    if (file.length() == 0) {
+                        boolean finalDeleted = false;
+                        for (int i = 0; i < 3; i++) {
+                            Log.d(TAG, "deleteFile: 尝试第 " + (i + 1) + " 次删除0字节文件 - " + fileName);
+                            finalDeleted = file.delete();
+                            
+                            // 再次等待
+                            try {
+                                Thread.sleep(50);
+                            } catch (InterruptedException e) {
+                                // 忽略
+                            }
+                            
+                            // 检查是否删除成功
+                            if (!file.exists()) {
+                                Log.d(TAG, "deleteFile: ✓ 0字节文件已成功删除 - " + fileName);
+                                notifyMediaStoreDeleted(file);
+                                return new DeleteResult(true, "删除成功");
+                            }
                         }
+                        
+                        // 如果还是删不掉，尝试清空文件再删除
+                        Log.w(TAG, "deleteFile: 0字节文件顽固，尝试清空后删除 - " + fileName);
+                        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+                            fos.getChannel().truncate(0);
+                            fos.flush();
+                        } catch (Exception e) {
+                            Log.w(TAG, "deleteFile: 清空文件失败 - " + fileName, e);
+                        }
+                        
+                        // 最后再尝试一次
+                        finalDeleted = file.delete();
+                        if (!file.exists()) {
+                            Log.d(TAG, "deleteFile: ✓ 清空后成功删除0字节文件 - " + fileName);
+                            notifyMediaStoreDeleted(file);
+                            return new DeleteResult(true, "删除成功");
+                        }
+                        
+                        // 仍然存在，放弃
+                        errorMessage = "无法删除0字节残留文件（可能被系统锁定）";
+                        Log.e(TAG, "deleteFile: ✗ " + errorMessage + " - " + fileName);
+                        return new DeleteResult(false, errorMessage);
+                    } else {
+                        // 不是0字节文件，再尝试删除一次
+                        deleted = file.delete();
+                        
+                        if (!file.exists()) {
+                            Log.d(TAG, "deleteFile: ✓ 第二次删除成功 - " + fileName);
+                            notifyMediaStoreDeleted(file);
+                            return new DeleteResult(true, "删除成功");
+                        }
+                        
+                        errorMessage = "删除失败（文件仍存在，大小: " + file.length() + " bytes）";
+                        Log.e(TAG, "deleteFile: ✗ " + errorMessage + " - " + fileName);
+                        return new DeleteResult(false, errorMessage);
                     }
                 }
                 
@@ -455,7 +500,7 @@ public class PendingDeleteManager {
     }
     
     /**
-     * 在主线程显示删除结果
+     * 在主线程显示删除结果（顶部弹窗）
      */
     private void showDeleteResult(String filePath, DeleteResult result) {
         mainHandler.post(() -> {
@@ -463,13 +508,15 @@ public class PendingDeleteManager {
             String message;
             
             if (result.success) {
-                message = "已删除: " + fileName;
+                message = "✓ 已删除: " + fileName;
             } else {
-                message = "删除失败: " + fileName + "\n原因: " + result.errorMessage;
+                message = "✗ 删除失败: " + fileName + "\n" + result.errorMessage;
             }
             
-            Toast.makeText(context, message, 
-                result.success ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+            Toast toast = Toast.makeText(context, message, 
+                result.success ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG);
+            toast.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 100);
+            toast.show();
         });
     }
     

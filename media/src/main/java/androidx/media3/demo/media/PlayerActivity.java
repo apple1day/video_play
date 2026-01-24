@@ -32,6 +32,7 @@ public class PlayerActivity extends AppCompatActivity {
     private static final String TAG = "PlayerActivity";
     
     private PlayerView playerView;
+    private ImageButton backButton;
     private ImageButton favoriteButton;
     private ImageButton pendingDeleteButton;
     private ExoPlayer player;
@@ -86,9 +87,16 @@ public class PlayerActivity extends AppCompatActivity {
         
         // 延迟获取自定义控制器中的按钮
         playerView.post(() -> {
-            // 获取顶部的收藏按钮
+            // 获取顶部控制按钮
             View topControlsView = playerView.findViewById(R.id.top_controls);
             if (topControlsView != null) {
+                // 返回按钮
+                backButton = topControlsView.findViewById(R.id.back_button);
+                if (backButton != null) {
+                    backButton.setOnClickListener(v -> finish());
+                }
+                
+                // 收藏按钮
                 favoriteButton = topControlsView.findViewById(R.id.favorite_button);
                 if (favoriteButton != null) {
                     favoriteButton.setOnClickListener(v -> toggleFavorite());
