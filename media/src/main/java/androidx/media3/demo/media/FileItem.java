@@ -72,6 +72,13 @@ public class FileItem {
         if (isDirectory) {
             return "";
         }
+        return formatSize(size);
+    }
+    
+    /**
+     * 格式化文件大小（静态方法）
+     */
+    public static String formatSize(long size) {
         if (size < 1024) {
             return size + " B";
         } else if (size < 1024 * 1024) {

@@ -31,10 +31,16 @@ public class MainActivity extends AppCompatActivity {
         viewPager.setAdapter(adapter);
 
         new TabLayoutMediator(tabLayout, viewPager, (tab, position) -> {
-            if (position == 0) {
-                tab.setText(R.string.tab_home);
-            } else {
-                tab.setText(R.string.tab_more);
+            switch (position) {
+                case 0:
+                    tab.setText(R.string.tab_home);
+                    break;
+                case 1:
+                    tab.setText(R.string.tab_folders);
+                    break;
+                case 2:
+                    tab.setText(R.string.tab_more);
+                    break;
             }
         }).attach();
 
@@ -52,6 +58,8 @@ public class MainActivity extends AppCompatActivity {
             Fragment fragment = getSupportFragmentManager().findFragmentByTag("f" + viewPager.getCurrentItem());
             if (fragment instanceof HomeFragment) {
                 ((HomeFragment) fragment).refreshFiles();
+            } else if (fragment instanceof FolderFragment) {
+                ((FolderFragment) fragment).refreshFolders();
             } else if (fragment instanceof MoreFragment) {
                 ((MoreFragment) fragment).refreshFiles();
             }
@@ -66,16 +74,21 @@ public class MainActivity extends AppCompatActivity {
         @NonNull
         @Override
         public Fragment createFragment(int position) {
-            if (position == 0) {
-                return new HomeFragment();
-            } else {
-                return new MoreFragment();
+            switch (position) {
+                case 0:
+                    return new HomeFragment();
+                case 1:
+                    return new FolderFragment();
+                case 2:
+                    return new MoreFragment();
+                default:
+                    return new HomeFragment();
             }
         }
 
         @Override
         public int getItemCount() {
-            return 2;
+            return 3;
         }
     }
 }

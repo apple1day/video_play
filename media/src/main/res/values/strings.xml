@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">小熊播放器</string>
     <string name="tab_home">首页</string>
+    <string name="tab_folders">文件夹</string>
     <string name="tab_more">更多</string>
     <string name="filter_video">视频</string>
     <string name="filter_audio">音乐</string>

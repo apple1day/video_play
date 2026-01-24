@@ -1,0 +1,472 @@
+package androidx.media3.demo.media;
+
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * 文件夹详情Activity - 显示文件夹内的视频列表
+ */
+public class FolderDetailActivity extends AppCompatActivity {
+
+    private static final String TAG = "FolderDetailActivity";
+    private static final String[] VIDEO_EXTENSIONS = {
+        ".mp4", ".avi", ".mkv", ".mov", ".flv", ".wmv", ".3gp", ".m4v", ".webm"
+    };
+
+    private TextView folderNameText;
+    private TextView folderInfoText;
+    private TextView emptyView;
+    private RecyclerView videoList;
+    private Button backButton;
+    private Button sortButton;
+    private FileAdapter adapter;
+    
+    private String folderPath;
+    private String folderName;
+    private List<FileItem> videos = new ArrayList<>();
+    private boolean sortByTime = true; // true=按时间排序，false=按大小排序
+    
+    private FavoriteManager favoriteManager;
+    private PendingDeleteManager pendingDeleteManager;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_folder_detail);
+
+        // 获取传入的文件夹路径
+        folderPath = getIntent().getStringExtra("folder_path");
+        folderName = getIntent().getStringExtra("folder_name");
+
+        if (folderPath == null) {
+            finish();
+            return;
+        }
+
+        // 初始化管理器
+        favoriteManager = FavoriteManager.getInstance(this);
+        pendingDeleteManager = PendingDeleteManager.getInstance(this);
+        
+        // 设置文件删除监听器
+        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+            @Override
+            public void onFileDeleted(String filePath, boolean success, String errorMessage) {
+                // 文件删除后刷新列表
+                if (success) {
+                    runOnUiThread(() -> loadVideos());
+                }
+            }
+            
+            @Override
+            public void onFilesDeleted(int successCount, int failCount, List<String> failedFiles) {
+                // 批量删除后刷新列表
+                runOnUiThread(() -> loadVideos());
+            }
+        });
+
+        initViews();
+        loadVideos();
+    }
+
+    private void initViews() {
+        folderNameText = findViewById(R.id.folder_name);
+        folderInfoText = findViewById(R.id.folder_info);
+        emptyView = findViewById(R.id.empty_view);
+        videoList = findViewById(R.id.video_list);
+        backButton = findViewById(R.id.back_button);
+        sortButton = findViewById(R.id.sort_button);
+
+        // 设置文件夹名称
+        folderNameText.setText(folderName);
+
+        // 返回按钮
+        backButton.setOnClickListener(v -> finish());
+
+        // 排序按钮
+        sortButton.setOnClickListener(v -> {
+            sortByTime = !sortByTime;
+            sortButton.setText(sortByTime ? "时间" : "大小");
+            sortVideos();
+        });
+
+        // 设置RecyclerView
+        videoList.setLayoutManager(new LinearLayoutManager(this));
+        adapter = new FileAdapter(videos, item -> {
+            // 点击视频，播放
+            playVideo(item);
+        });
+        adapter.setContext(this);
+        
+        // 设置长按监听器
+        adapter.setOnItemLongClickListener(item -> {
+            showVideoOptionsDialog(item);
+            return true;
+        });
+        
+        videoList.setAdapter(adapter);
+    }
+
+    /**
+     * 加载文件夹内的视频
+     */
+    private void loadVideos() {
+        Log.d(TAG, "加载文件夹视频: " + folderPath);
+
+        new Thread(() -> {
+            File folder = new File(folderPath);
+            if (!folder.exists() || !folder.isDirectory()) {
+                runOnUiThread(() -> {
+                    emptyView.setVisibility(View.VISIBLE);
+                    videoList.setVisibility(View.GONE);
+                });
+                return;
+            }
+
+            List<FileItem> videoList = new ArrayList<>();
+            long totalSize = 0;
+
+            File[] files = folder.listFiles();
+            if (files != null) {
+            for (File file : files) {
+                if (file.isFile() && isVideoFile(file)) {
+                    videoList.add(new FileItem(file));
+                    totalSize += file.length();
+                }
+            }
+            }
+
+            // 排序
+            Collections.sort(videoList, (o1, o2) -> 
+                Long.compare(o2.getLastModified(), o1.getLastModified()));
+
+            final long finalTotalSize = totalSize;
+
+            // 更新UI
+            runOnUiThread(() -> {
+                videos.clear();
+                videos.addAll(videoList);
+                adapter.updateFiles(videos);
+                updateEmptyView();
+                updateFolderInfo(videoList.size(), finalTotalSize);
+                Log.d(TAG, "加载了 " + videoList.size() + " 个视频");
+            });
+        }).start();
+    }
+
+    /**
+     * 判断是否为视频文件
+     */
+    private boolean isVideoFile(File file) {
+        String name = file.getName().toLowerCase();
+        for (String ext : VIDEO_EXTENSIONS) {
+            if (name.endsWith(ext)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 排序视频
+     */
+    private void sortVideos() {
+        if (sortByTime) {
+            Collections.sort(videos, (o1, o2) -> 
+                Long.compare(o2.getLastModified(), o1.getLastModified()));
+        } else {
+            Collections.sort(videos, (o1, o2) -> 
+                Long.compare(o2.getSize(), o1.getSize()));
+        }
+        adapter.updateFiles(videos);
+    }
+
+    /**
+     * 更新空视图
+     */
+    private void updateEmptyView() {
+        if (videos.isEmpty()) {
+            videoList.setVisibility(View.GONE);
+            emptyView.setVisibility(View.VISIBLE);
+        } else {
+            videoList.setVisibility(View.VISIBLE);
+            emptyView.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * 更新文件夹信息
+     */
+    private void updateFolderInfo(int count, long size) {
+        String info = count + " 个视频  " + FileItem.formatSize(size);
+        folderInfoText.setText(info);
+    }
+
+    /**
+     * 播放视频
+     */
+    private void playVideo(FileItem item) {
+        // 构建视频列表
+        ArrayList<String> fileList = new ArrayList<>();
+        for (FileItem video : videos) {
+            fileList.add(video.getFile().getAbsolutePath());
+        }
+
+        // 找到当前视频的索引
+        int currentIndex = 0;
+        for (int i = 0; i < videos.size(); i++) {
+            if (videos.get(i).getFile().getAbsolutePath()
+                    .equals(item.getFile().getAbsolutePath())) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        // 启动播放器
+        Intent intent = new Intent(this, PlayerActivity.class);
+        intent.putExtra("file_path", item.getFile().getAbsolutePath());
+        intent.putStringArrayListExtra("file_list", fileList);
+        intent.putExtra("current_index", currentIndex);
+        startActivity(intent);
+    }
+    
+    /**
+     * 显示视频选项对话框（长按菜单）
+     */
+    private void showVideoOptionsDialog(FileItem item) {
+        File file = item.getFile();
+        String filePath = file.getAbsolutePath();
+        
+        boolean isFavorite = favoriteManager.isFavorite(filePath);
+        boolean isPendingDelete = pendingDeleteManager.isPendingDelete(filePath);
+        
+        // 创建选项列表
+        List<String> options = new ArrayList<>();
+        options.add(isFavorite ? "取消收藏" : "收藏");
+        options.add(isPendingDelete ? "取消待删除" : "标记待删除");
+        options.add("立即删除");
+        options.add("查看信息");
+        
+        new AlertDialog.Builder(this)
+            .setTitle(item.getName())
+            .setItems(options.toArray(new String[0]), (dialog, which) -> {
+                switch (which) {
+                    case 0: // 收藏/取消收藏
+                        toggleFavorite(filePath);
+                        break;
+                    case 1: // 标记待删除/取消待删除
+                        togglePendingDelete(filePath);
+                        break;
+                    case 2: // 立即删除
+                        confirmAndDeleteVideo(item);
+                        break;
+                    case 3: // 查看信息
+                        showVideoInfo(item);
+                        break;
+                }
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 切换收藏状态
+     */
+    private void toggleFavorite(String filePath) {
+        boolean isFavorited = favoriteManager.toggleFavorite(filePath);
+        String message = isFavorited ? "已收藏" : "已取消收藏";
+        showTopToast(message);
+        adapter.notifyDataSetChanged();
+    }
+    
+    /**
+     * 切换待删除状态
+     */
+    private void togglePendingDelete(String filePath) {
+        boolean isPending = pendingDeleteManager.togglePendingDelete(filePath);
+        String message = isPending ? "已标记为待删除" : "已取消待删除";
+        showTopToast(message);
+        adapter.notifyDataSetChanged();
+    }
+    
+    /**
+     * 显示视频信息
+     */
+    private void showVideoInfo(FileItem item) {
+        String info = "文件名: " + item.getName() + "\n" +
+                     "大小: " + item.getFormattedSize() + "\n" +
+                     "路径: " + item.getFile().getAbsolutePath() + "\n" +
+                     "修改时间: " + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+                         .format(new java.util.Date(item.getLastModified()));
+        
+        new AlertDialog.Builder(this)
+            .setTitle("视频信息")
+            .setMessage(info)
+            .setPositiveButton("确定", null)
+            .show();
+    }
+    
+    /**
+     * 确认并删除视频
+     */
+    private void confirmAndDeleteVideo(FileItem item) {
+        new AlertDialog.Builder(this)
+            .setTitle("确认删除")
+            .setMessage("确定要删除 \"" + item.getName() + "\" 吗？\n此操作无法撤销。")
+            .setPositiveButton("删除", (dialog, which) -> deleteVideoAsync(item))
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 异步删除视频
+     */
+    private void deleteVideoAsync(FileItem item) {
+        File file = item.getFile();
+        String fileName = file.getName();
+        
+        // 显示删除中提示
+        showTopToast("正在删除 " + fileName + "...");
+        
+        // 在后台线程删除文件
+        new Thread(() -> {
+            boolean success = false;
+            String errorMessage = null;
+            
+            try {
+                if (file.exists()) {
+                    if (!file.canWrite()) {
+                        errorMessage = "文件无写权限";
+                    } else if (file.getParentFile() != null && !file.getParentFile().canWrite()) {
+                        errorMessage = "父目录无写权限";
+                    } else {
+                        success = file.delete();
+                        if (success) {
+                            // 等待一小段时间，让系统完成删除操作
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                // 忽略
+                            }
+                            
+                            // 检查文件是否真的被删除了
+                            if (file.exists()) {
+                                // 文件仍然存在，尝试多次删除0字节文件
+                                if (file.length() == 0) {
+                                    for (int i = 0; i < 3; i++) {
+                                        success = file.delete();
+                                        try {
+                                            Thread.sleep(50);
+                                        } catch (InterruptedException e) {
+                                            // 忽略
+                                        }
+                                        if (!file.exists()) {
+                                            break;
+                                        }
+                                    }
+                                    
+                                    // 如果还是删不掉，尝试清空文件再删除
+                                    if (file.exists()) {
+                                        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+                                            fos.getChannel().truncate(0);
+                                            fos.flush();
+                                        } catch (Exception e) {
+                                            Log.w(TAG, "清空文件失败", e);
+                                        }
+                                        success = file.delete();
+                                    }
+                                } else {
+                                    // 不是0字节文件，再尝试删除一次
+                                    success = file.delete();
+                                }
+                                
+                                if (file.exists()) {
+                                    success = false;
+                                    errorMessage = "删除失败（文件仍然存在）";
+                                }
+                            }
+                            
+                            // 通知媒体扫描器更新
+                            if (success) {
+                                try {
+                                    android.media.MediaScannerConnection.scanFile(
+                                        this,
+                                        new String[]{file.getAbsolutePath()},
+                                        null,
+                                        null
+                                    );
+                                } catch (Exception e) {
+                                    // 忽略扫描错误
+                                }
+                            }
+                        } else {
+                            // 检查文件是否已经不存在了
+                            if (!file.exists()) {
+                                success = true;
+                            } else {
+                                errorMessage = "删除失败（可能被占用或系统保护）";
+                            }
+                        }
+                    }
+                } else {
+                    errorMessage = "文件不存在";
+                }
+            } catch (SecurityException e) {
+                errorMessage = "安全异常：" + e.getMessage();
+            } catch (Exception e) {
+                errorMessage = "删除异常：" + e.getMessage();
+            }
+            
+            // 在主线程更新UI
+            final boolean finalSuccess = success;
+            final String finalError = errorMessage;
+            
+            runOnUiThread(() -> {
+                if (finalSuccess) {
+                    showTopToast("✓ 已删除: " + fileName);
+                    // 从收藏和待删除列表中移除
+                    favoriteManager.removeFavorite(file.getAbsolutePath());
+                    pendingDeleteManager.removePendingDelete(file.getAbsolutePath());
+                    // 刷新列表
+                    loadVideos();
+                } else {
+                    showTopToast("✗ 删除失败: " + fileName + "\n" + finalError);
+                }
+            });
+        }).start();
+    }
+    
+    /**
+     * 显示顶部Toast提示
+     */
+    private void showTopToast(String message) {
+        Toast toast = Toast.makeText(this, message, Toast.LENGTH_SHORT);
+        toast.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 100);
+        toast.show();
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 移除监听器
+        if (pendingDeleteManager != null) {
+            pendingDeleteManager.setOnFileDeletedListener(null);
+        }
+    }
+}

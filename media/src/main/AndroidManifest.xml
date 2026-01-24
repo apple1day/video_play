@@ -111,6 +111,11 @@
             android:label="@string/all_videos"
             android:exported="false" />
 
+        <activity
+            android:name=".FolderDetailActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:exported="false" />
+
         <!-- FileProvider 配置 - 实现文件共享功能 -->
         <provider
             android:name="androidx.core.content.FileProvider"

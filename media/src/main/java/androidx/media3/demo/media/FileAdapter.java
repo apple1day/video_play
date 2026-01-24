@@ -25,6 +25,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
 
     private List<FileItem> files = new ArrayList<>();
     private OnItemClickListener listener;
+    private OnItemLongClickListener longClickListener;
     private OnSelectionChangeListener selectionChangeListener;
     private boolean isSelectionMode = false;
     private Set<Integer> selectedPositions = new HashSet<>();
@@ -37,8 +38,16 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         void onItemClick(FileItem item);
     }
     
+    public interface OnItemLongClickListener {
+        boolean onItemLongClick(FileItem item);
+    }
+    
     public interface OnSelectionChangeListener {
         void onSelectionChanged(int selectedCount);
+    }
+    
+    public void setOnItemLongClickListener(OnItemLongClickListener listener) {
+        this.longClickListener = listener;
     }
     
     public void setSelectionChangeListener(OnSelectionChangeListener listener) {
@@ -291,11 +300,18 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             
             itemView.setOnLongClickListener(v -> {
                 int position = getAdapterPosition();
-                if (position != RecyclerView.NO_POSITION && !isSelectionMode) {
-                    // 长按进入多选模式
-                    setSelectionMode(true);
-                    toggleSelection(position);
-                    return true;
+                if (position != RecyclerView.NO_POSITION) {
+                    // 如果设置了独立的长按监听器，优先使用它
+                    if (longClickListener != null) {
+                        return longClickListener.onItemLongClick(files.get(position));
+                    }
+                    
+                    // 否则，长按进入多选模式（仅在非多选模式下）
+                    if (!isSelectionMode) {
+                        setSelectionMode(true);
+                        toggleSelection(position);
+                        return true;
+                    }
                 }
                 return false;
             });
