@@ -15,6 +15,34 @@ import java.util.List;
 
 public class FileUtils {
     
+    // 最小文件大小限制：1MB = 1024 * 1024 bytes
+    private static final long MIN_FILE_SIZE = 1024 * 1024;
+    
+    /**
+     * 判断文件是否应该被过滤掉
+     * @param file 要检查的文件
+     * @return true=应该过滤掉, false=保留
+     */
+    public static boolean shouldFilterFile(File file) {
+        if (file == null || !file.exists() || !file.isFile()) {
+            return true;
+        }
+        
+        String name = file.getName();
+        
+        // 过滤隐藏文件（.开头）
+        if (name.startsWith(".")) {
+            return true;
+        }
+        
+        // 过滤小于 1MB 的文件
+        if (file.length() < MIN_FILE_SIZE) {
+            return true;
+        }
+        
+        return false;
+    }
+    
     public static List<File> getStorageDirectories(Context context) {
         List<File> directories = new ArrayList<>();
         
@@ -109,6 +137,11 @@ public class FileUtils {
                 // 递归扫描子目录
                 files.addAll(scanFiles(file, filterType));
             } else {
+                // 应用文件过滤规则
+                if (shouldFilterFile(file)) {
+                    continue;
+                }
+                
                 FileItem item = new FileItem(file);
                 if (filterType == null || filterType == FileItem.FileType.OTHER || 
                     item.getFileType() == filterType) {

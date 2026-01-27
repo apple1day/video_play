@@ -223,6 +223,18 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         }
     }
     
+    /**
+     * 选择指定位置的项目
+     */
+    public void selectPositions(List<Integer> positions) {
+        selectedPositions.clear();
+        selectedPositions.addAll(positions);
+        notifyDataSetChanged();
+        if (selectionChangeListener != null) {
+            selectionChangeListener.onSelectionChanged(selectedPositions.size());
+        }
+    }
+    
     public List<FileItem> getSelectedItems() {
         List<FileItem> selected = new ArrayList<>();
         for (Integer position : selectedPositions) {

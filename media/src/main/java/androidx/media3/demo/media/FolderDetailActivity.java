@@ -36,6 +36,13 @@ public class FolderDetailActivity extends AppCompatActivity {
     private RecyclerView videoList;
     private Button backButton;
     private Button sortButton;
+    private View selectionToolbarLayout;
+    private Button selectAllButton;
+    private Button selectFavoritesButton;
+    private Button selectPendingDeletesButton;
+    private Button deleteSelectedButton;
+    private Button cancelSelectionButton;
+    private TextView selectedCountText;
     private FileAdapter adapter;
     
     private String folderPath;
@@ -92,6 +99,13 @@ public class FolderDetailActivity extends AppCompatActivity {
         videoList = findViewById(R.id.video_list);
         backButton = findViewById(R.id.back_button);
         sortButton = findViewById(R.id.sort_button);
+        selectionToolbarLayout = findViewById(R.id.selection_toolbar_layout);
+        selectAllButton = findViewById(R.id.select_all_button);
+        selectFavoritesButton = findViewById(R.id.select_favorites_button);
+        selectPendingDeletesButton = findViewById(R.id.select_pending_deletes_button);
+        deleteSelectedButton = findViewById(R.id.delete_selected_button);
+        cancelSelectionButton = findViewById(R.id.cancel_selection_button);
+        selectedCountText = findViewById(R.id.selected_count_text);
 
         // 设置文件夹名称
         folderNameText.setText(folderName);
@@ -109,18 +123,29 @@ public class FolderDetailActivity extends AppCompatActivity {
         // 设置RecyclerView
         videoList.setLayoutManager(new LinearLayoutManager(this));
         adapter = new FileAdapter(videos, item -> {
-            // 点击视频，播放
-            playVideo(item);
+            // 单击模式
+            if (!adapter.isSelectionMode()) {
+                // 普通模式：播放视频
+                playVideo(item);
+            }
+            // 多选模式由 FileAdapter 内部处理
         });
         adapter.setContext(this);
         
-        // 设置长按监听器
+        // 设置长按监听器：长按进入多选模式或显示菜单
         adapter.setOnItemLongClickListener(item -> {
-            showVideoOptionsDialog(item);
-            return true;
+            // 不使用单独的长按菜单，直接进入多选模式
+            // FileAdapter 内部会处理长按进入多选
+            return false; // 返回 false 让 FileAdapter 处理
         });
         
+        // 设置多选状态监听
+        adapter.setSelectionChangeListener(count -> updateSelectionUI());
+        
         videoList.setAdapter(adapter);
+        
+        // 批量操作按钮
+        setupSelectionButtons();
     }
 
     /**
@@ -145,7 +170,8 @@ public class FolderDetailActivity extends AppCompatActivity {
             File[] files = folder.listFiles();
             if (files != null) {
             for (File file : files) {
-                if (file.isFile() && isVideoFile(file)) {
+                // 应用文件过滤规则：过滤隐藏文件和小于1MB的文件
+                if (file.isFile() && isVideoFile(file) && !FileUtils.shouldFilterFile(file)) {
                     videoList.add(new FileItem(file));
                     totalSize += file.length();
                 }
@@ -459,6 +485,184 @@ public class FolderDetailActivity extends AppCompatActivity {
         Toast toast = Toast.makeText(this, message, Toast.LENGTH_SHORT);
         toast.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 100);
         toast.show();
+    }
+    
+    /**
+     * 设置批量操作按钮
+     */
+    private void setupSelectionButtons() {
+        selectAllButton.setOnClickListener(v -> {
+            int currentCount = adapter.getSelectedCount();
+            int totalCount = adapter.getItemCount();
+            
+            if (currentCount == totalCount && totalCount > 0) {
+                // 全部已选中，取消全选
+                adapter.clearSelection();
+            } else {
+                // 全选
+                adapter.selectAll();
+            }
+        });
+        
+        selectFavoritesButton.setOnClickListener(v -> {
+            // 选择所有收藏的视频
+            List<Integer> favoritePositions = new ArrayList<>();
+            for (int i = 0; i < videos.size(); i++) {
+                if (favoriteManager.isFavorite(videos.get(i).getFile().getAbsolutePath())) {
+                    favoritePositions.add(i);
+                }
+            }
+            if (!favoritePositions.isEmpty()) {
+                adapter.selectPositions(favoritePositions);
+                showTopToast("已选择 " + favoritePositions.size() + " 个收藏视频");
+            } else {
+                showTopToast("没有收藏的视频");
+            }
+        });
+        
+        selectPendingDeletesButton.setOnClickListener(v -> {
+            // 选择所有待删除的视频
+            List<Integer> pendingPositions = new ArrayList<>();
+            for (int i = 0; i < videos.size(); i++) {
+                if (pendingDeleteManager.isPendingDelete(videos.get(i).getFile().getAbsolutePath())) {
+                    pendingPositions.add(i);
+                }
+            }
+            if (!pendingPositions.isEmpty()) {
+                adapter.selectPositions(pendingPositions);
+                showTopToast("已选择 " + pendingPositions.size() + " 个待删除视频");
+            } else {
+                showTopToast("没有待删除的视频");
+            }
+        });
+        
+        deleteSelectedButton.setOnClickListener(v -> {
+            confirmAndDeleteSelected();
+        });
+        
+        cancelSelectionButton.setOnClickListener(v -> {
+            adapter.setSelectionMode(false);
+        });
+    }
+    
+    /**
+     * 更新批量操作UI
+     */
+    private void updateSelectionUI() {
+        if (adapter.isSelectionMode()) {
+            selectionToolbarLayout.setVisibility(View.VISIBLE);
+            int count = adapter.getSelectedCount();
+            int total = adapter.getItemCount();
+            selectedCountText.setText("已选 " + count + " 项");
+            deleteSelectedButton.setEnabled(count > 0);
+            
+            // 更新全选按钮文本
+            if (count == total && total > 0) {
+                selectAllButton.setText("取消全选");
+            } else {
+                selectAllButton.setText("全选");
+            }
+        } else {
+            selectionToolbarLayout.setVisibility(View.GONE);
+        }
+    }
+    
+    /**
+     * 确认并批量删除
+     */
+    private void confirmAndDeleteSelected() {
+        List<FileItem> selectedItems = adapter.getSelectedItems();
+        if (selectedItems.isEmpty()) {
+            showTopToast("请先选择要删除的视频");
+            return;
+        }
+        
+        new AlertDialog.Builder(this)
+            .setTitle("确认批量删除")
+            .setMessage("确定要删除选中的 " + selectedItems.size() + " 个视频吗？\n此操作无法撤销。")
+            .setPositiveButton("删除", (dialog, which) -> {
+                deleteSelectedAsync(selectedItems);
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 异步批量删除
+     */
+    private void deleteSelectedAsync(List<FileItem> itemsToDelete) {
+        adapter.setSelectionMode(false);
+        
+        int totalCount = itemsToDelete.size();
+        showTopToast("正在删除 " + totalCount + " 个视频...");
+        
+        new Thread(() -> {
+            int successCount = 0;
+            int failCount = 0;
+            
+            for (FileItem item : itemsToDelete) {
+                File file = item.getFile();
+                boolean success = false;
+                
+                try {
+                    if (file.exists()) {
+                        success = file.delete();
+                        
+                        if (success) {
+                            // 等待删除完成
+                            Thread.sleep(50);
+                            
+                            // 检查并处理0字节文件
+                            if (file.exists()) {
+                                if (file.length() == 0) {
+                                    for (int i = 0; i < 3; i++) {
+                                        success = file.delete();
+                                        Thread.sleep(30);
+                                        if (!file.exists()) break;
+                                    }
+                                    
+                                    if (file.exists()) {
+                                        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+                                            fos.getChannel().truncate(0);
+                                            fos.flush();
+                                        }
+                                        success = file.delete();
+                                    }
+                                } else {
+                                    success = file.delete();
+                                }
+                            }
+                        }
+                        
+                        if (success || !file.exists()) {
+                            successCount++;
+                            // 从管理器中移除
+                            favoriteManager.removeFavorite(file.getAbsolutePath());
+                            pendingDeleteManager.removePendingDelete(file.getAbsolutePath());
+                        } else {
+                            failCount++;
+                        }
+                    }
+                } catch (Exception e) {
+                    failCount++;
+                    Log.e(TAG, "批量删除失败: " + file.getName(), e);
+                }
+            }
+            
+            final int finalSuccess = successCount;
+            final int finalFail = failCount;
+            
+            runOnUiThread(() -> {
+                String message = "删除完成：成功 " + finalSuccess + " 个";
+                if (finalFail > 0) {
+                    message += "，失败 " + finalFail + " 个";
+                }
+                showTopToast(message);
+                
+                // 刷新列表
+                loadVideos();
+            });
+        }).start();
     }
     
     @Override

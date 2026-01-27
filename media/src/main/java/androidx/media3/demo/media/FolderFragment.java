@@ -159,7 +159,8 @@ public class FolderFragment extends Fragment {
             if (file.isDirectory()) {
                 // 递归扫描子目录
                 scanDirectory(file, folderMap);
-            } else if (file.isFile() && isVideoFile(file)) {
+            } else if (file.isFile() && isVideoFile(file) && !FileUtils.shouldFilterFile(file)) {
+                // 只统计未被过滤的视频文件
                 videoCount++;
                 totalSize += file.length();
             }
