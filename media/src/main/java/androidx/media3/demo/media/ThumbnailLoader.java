@@ -33,8 +33,7 @@ public class ThumbnailLoader {
         }
         
         if (!videoFile.exists()) {
-            // 先清除之前的请求
-            Glide.with(context).clear(imageView);
+            // 只在文件不存在时清除并设置默认图标
             imageView.setImageResource(android.R.drawable.ic_menu_gallery);
             return;
         }
@@ -42,16 +41,17 @@ public class ThumbnailLoader {
         // 使用文件路径+修改时间作为缓存key，避免缓存混淆
         String cacheKey = videoFile.getAbsolutePath() + "_" + videoFile.lastModified();
         
+        // 优化：降低缩略图分辨率至200x200，减少内存占用和加载时间
         RequestOptions options = new RequestOptions()
                 .centerCrop()
                 .diskCacheStrategy(DiskCacheStrategy.ALL) // 缓存所有版本
                 .placeholder(android.R.drawable.ic_menu_gallery)
                 .error(android.R.drawable.ic_menu_gallery)
                 .signature(new ObjectKey(cacheKey)) // 使用唯一签名避免缓存混淆
-                .override(300, 300); // 限制缩略图大小，加快加载速度
+                .override(200, 200); // 优化：降低分辨率（原300x300）
         
-        // 先清除ImageView上的旧请求，避免排序后图片错乱
-        Glide.with(context).clear(imageView);
+        // 优化：移除clear()调用，让Glide自己管理请求，避免快速滚动时的闪烁
+        // 只在文件不存在时才清除，正常加载时让Glide复用请求
         
         // 加载新缩略图
         Glide.with(context)

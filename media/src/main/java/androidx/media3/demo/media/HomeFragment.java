@@ -867,7 +867,7 @@ public class HomeFragment extends Fragment {
             FileUtils.scanAllFilesAsync(targetDirectories, currentFilter, new FileUtils.ScanCallback() {
                 @Override
                 public void onBatchLoaded(List<FileItem> batch) {
-                    // 每批文件加载完成，立即在主线程更新UI
+                    // 优化：减少UI更新频率，仅更新计数不立即排序
                     new Handler(Looper.getMainLooper()).post(() -> {
                         synchronized (allScannedFiles) {
                             allScannedFiles.addAll(batch);
@@ -879,10 +879,10 @@ public class HomeFragment extends Fragment {
                                 }
                             }
                             
-                            // 更新UI显示
-                            allFiles = new ArrayList<>(allScannedFiles);
-                            allVideoFiles = new ArrayList<>(allScannedVideos);
-                            applyFilterAndSort();
+                            // 优化：仅更新加载提示文本，不触发排序和UI刷新
+                            if (loadingView != null) {
+                                loadingView.setText("正在加载视频... 已找到 " + allScannedVideos.size() + " 个");
+                            }
                             
                             Log.d(TAG, "已加载 " + allScannedFiles.size() + " 个文件（增量更新）");
                         }
@@ -1432,15 +1432,29 @@ public class HomeFragment extends Fragment {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (deleteExecutor != null) {
-            deleteExecutor.shutdown();
+        
+        // 清理Handler回调，避免内存泄漏
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
         }
+        
+        // 清理线程池
+        if (deleteExecutor != null) {
+            deleteExecutor.shutdownNow(); // 使用shutdownNow立即停止
+        }
+        
         // 移除监听器，避免内存泄漏
         if (pendingDeleteManager != null) {
             pendingDeleteManager.setOnFileDeletedListener(null);
         }
+        
         // 清除视频列表监听器
         videoListLoadListener = null;
+        
+        // 清除Adapter中的缓存
+        if (adapter != null) {
+            adapter.clearCache();
+        }
     }
     
     /**

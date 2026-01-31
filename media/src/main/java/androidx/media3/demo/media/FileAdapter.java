@@ -11,6 +11,8 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.collection.LruCache;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.text.SimpleDateFormat;
@@ -33,6 +35,11 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     private PendingDeleteManager pendingDeleteManager;
     private WatchedManager watchedManager;
     private Context context;
+    
+    // 性能优化：添加状态缓存，避免频繁查询SharedPreferences
+    private LruCache<String, Boolean> favoriteCache = new LruCache<>(200);
+    private LruCache<String, Boolean> watchedCache = new LruCache<>(200);
+    private LruCache<String, Boolean> pendingDeleteCache = new LruCache<>(200);
 
     public interface OnItemClickListener {
         void onItemClick(FileItem item);
@@ -67,9 +74,60 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     }
 
     public void updateFiles(List<FileItem> newFiles) {
+        // 使用DiffUtil计算差异，避免全量刷新
+        List<FileItem> oldFiles = this.files;
+        DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override
+            public int getOldListSize() {
+                return oldFiles.size();
+            }
+
+            @Override
+            public int getNewListSize() {
+                return newFiles.size();
+            }
+
+            @Override
+            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                FileItem oldItem = oldFiles.get(oldItemPosition);
+                FileItem newItem = newFiles.get(newItemPosition);
+                return oldItem.getFile().getAbsolutePath().equals(newItem.getFile().getAbsolutePath());
+            }
+
+            @Override
+            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                FileItem oldItem = oldFiles.get(oldItemPosition);
+                FileItem newItem = newFiles.get(newItemPosition);
+                // 比较文件的关键属性
+                return oldItem.getFile().getAbsolutePath().equals(newItem.getFile().getAbsolutePath()) &&
+                       oldItem.getLastModified() == newItem.getLastModified() &&
+                       oldItem.getSize() == newItem.getSize();
+            }
+        });
+        
         this.files = newFiles;
         selectedPositions.clear();
-        notifyDataSetChanged();
+        // 清除缓存，确保数据一致性
+        clearCache();
+        diffResult.dispatchUpdatesTo(this);
+    }
+    
+    /**
+     * 清除所有状态缓存
+     */
+    public void clearCache() {
+        favoriteCache.evictAll();
+        watchedCache.evictAll();
+        pendingDeleteCache.evictAll();
+    }
+    
+    /**
+     * 清除特定文件的缓存
+     */
+    public void clearCacheForFile(String filePath) {
+        favoriteCache.remove(filePath);
+        watchedCache.remove(filePath);
+        pendingDeleteCache.remove(filePath);
     }
     
     /**
@@ -332,8 +390,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         public void bind(FileItem item, int position) {
             fileName.setText(item.getName());
             
-            // 先清除旧的图片加载请求，避免排序后图片错乱
-            ThumbnailLoader.clearThumbnail(context, icon);
+            // 优化：移除clearThumbnail调用，让Glide自己管理请求，减少不必要的clear操作
             
             // 设置图标/缩略图
             if (item.isDirectory()) {
@@ -368,11 +425,15 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             info.append(sdf.format(new Date(item.getLastModified())));
             fileInfo.setText(info.toString());
             
-            // 设置已观看图标
+            // 设置已观看图标（优化：使用缓存）
             if (watchedIcon != null && watchedManager != null) {
                 if (item.getFileType() == FileItem.FileType.VIDEO) {
                     String filePath = item.getFile().getAbsolutePath();
-                    boolean isWatched = watchedManager.isWatched(filePath);
+                    Boolean isWatched = watchedCache.get(filePath);
+                    if (isWatched == null) {
+                        isWatched = watchedManager.isWatched(filePath);
+                        watchedCache.put(filePath, isWatched);
+                    }
                     if (isWatched) {
                         watchedIcon.setVisibility(View.VISIBLE);
                         watchedIcon.setColorFilter(Color.parseColor("#4CAF50"), PorterDuff.Mode.SRC_IN); // 绿色
@@ -384,11 +445,15 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
                 }
             }
             
-            // 设置收藏图标
+            // 设置收藏图标（优化：使用缓存）
             if (favoriteIcon != null && favoriteManager != null) {
                 if (item.getFileType() == FileItem.FileType.VIDEO) {
                     String filePath = item.getFile().getAbsolutePath();
-                    boolean isFavorited = favoriteManager.isFavorite(filePath);
+                    Boolean isFavorited = favoriteCache.get(filePath);
+                    if (isFavorited == null) {
+                        isFavorited = favoriteManager.isFavorite(filePath);
+                        favoriteCache.put(filePath, isFavorited);
+                    }
                     if (isFavorited) {
                         favoriteIcon.setVisibility(View.VISIBLE);
                         favoriteIcon.setColorFilter(Color.parseColor("#FFD700"), PorterDuff.Mode.SRC_IN);
@@ -400,11 +465,15 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
                 }
             }
             
-            // 设置待删除图标
+            // 设置待删除图标（优化：使用缓存）
             if (pendingDeleteIcon != null && pendingDeleteManager != null) {
                 if (item.getFileType() == FileItem.FileType.VIDEO) {
                     String filePath = item.getFile().getAbsolutePath();
-                    boolean isPending = pendingDeleteManager.isPendingDelete(filePath);
+                    Boolean isPending = pendingDeleteCache.get(filePath);
+                    if (isPending == null) {
+                        isPending = pendingDeleteManager.isPendingDelete(filePath);
+                        pendingDeleteCache.put(filePath, isPending);
+                    }
                     if (isPending) {
                         pendingDeleteIcon.setVisibility(View.VISIBLE);
                         pendingDeleteIcon.setColorFilter(Color.parseColor("#FF0000"), PorterDuff.Mode.SRC_IN);

@@ -6,6 +6,7 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
@@ -29,8 +30,38 @@ public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.ViewHolder
     }
 
     public void updateFolders(List<FolderItem> newFolders) {
+        // 使用DiffUtil计算差异，避免全量刷新
+        List<FolderItem> oldFolders = this.folders;
+        DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override
+            public int getOldListSize() {
+                return oldFolders.size();
+            }
+
+            @Override
+            public int getNewListSize() {
+                return newFolders.size();
+            }
+
+            @Override
+            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                FolderItem oldItem = oldFolders.get(oldItemPosition);
+                FolderItem newItem = newFolders.get(newItemPosition);
+                return oldItem.getFolderPath().equals(newItem.getFolderPath());
+            }
+
+            @Override
+            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                FolderItem oldItem = oldFolders.get(oldItemPosition);
+                FolderItem newItem = newFolders.get(newItemPosition);
+                return oldItem.getFolderPath().equals(newItem.getFolderPath()) &&
+                       oldItem.getVideoCount() == newItem.getVideoCount() &&
+                       oldItem.getTotalSize() == newItem.getTotalSize();
+            }
+        });
+        
         this.folders = newFolders;
-        notifyDataSetChanged();
+        diffResult.dispatchUpdatesTo(this);
     }
 
     @NonNull

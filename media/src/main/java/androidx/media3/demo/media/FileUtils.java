@@ -18,6 +18,9 @@ public class FileUtils {
     // 最小文件大小限制：1MB = 1024 * 1024 bytes
     private static final long MIN_FILE_SIZE = 1024 * 1024;
     
+    // 最大递归深度限制：防止栈溢出
+    private static final int MAX_RECURSION_DEPTH = 6;
+    
     /**
      * 判断文件是否应该被过滤掉
      * @param file 要检查的文件
@@ -118,8 +121,17 @@ public class FileUtils {
     }
     
     public static List<FileItem> scanFiles(File directory, FileItem.FileType filterType) {
+        return scanFiles(directory, filterType, 0);
+    }
+    
+    private static List<FileItem> scanFiles(File directory, FileItem.FileType filterType, int depth) {
         List<FileItem> files = new ArrayList<>();
         if (directory == null || !directory.exists() || !directory.isDirectory()) {
+            return files;
+        }
+        
+        // 防止递归过深导致栈溢出
+        if (depth >= MAX_RECURSION_DEPTH) {
             return files;
         }
         
@@ -134,8 +146,8 @@ public class FileUtils {
             }
             
             if (file.isDirectory()) {
-                // 递归扫描子目录
-                files.addAll(scanFiles(file, filterType));
+                // 递归扫描子目录，深度+1
+                files.addAll(scanFiles(file, filterType, depth + 1));
             } else {
                 // 应用文件过滤规则
                 if (shouldFilterFile(file)) {
@@ -162,7 +174,7 @@ public class FileUtils {
     public static void scanAllFilesAsync(List<File> storageDirectories, FileItem.FileType filterType, ScanCallback callback) {
         new Thread(() -> {
             List<FileItem> allFiles = new ArrayList<>();
-            int batchSize = 20; // 每20个文件回调一次
+            int batchSize = 50; // 优化：每50个文件回调一次（原来20个太频繁）
             
             for (File directory : storageDirectories) {
                 List<FileItem> dirFiles = scanFilesIncremental(directory, filterType, callback, batchSize);
@@ -181,10 +193,20 @@ public class FileUtils {
      */
     private static List<FileItem> scanFilesIncremental(File directory, FileItem.FileType filterType, 
                                                        ScanCallback callback, int batchSize) {
+        return scanFilesIncremental(directory, filterType, callback, batchSize, 0);
+    }
+    
+    private static List<FileItem> scanFilesIncremental(File directory, FileItem.FileType filterType, 
+                                                       ScanCallback callback, int batchSize, int depth) {
         List<FileItem> files = new ArrayList<>();
         List<FileItem> batch = new ArrayList<>();
         
         if (directory == null || !directory.exists() || !directory.isDirectory()) {
+            return files;
+        }
+        
+        // 防止递归过深导致栈溢出
+        if (depth >= MAX_RECURSION_DEPTH) {
             return files;
         }
         
@@ -199,10 +221,15 @@ public class FileUtils {
             }
             
             if (file.isDirectory()) {
-                // 递归扫描子目录（子目录的文件会在递归中直接回调，不需要再次添加到batch）
-                List<FileItem> subFiles = scanFilesIncremental(file, filterType, callback, batchSize);
+                // 递归扫描子目录（子目录的文件会在递归中直接回调，不需要再次添加到batch），深度+1
+                List<FileItem> subFiles = scanFilesIncremental(file, filterType, callback, batchSize, depth + 1);
                 files.addAll(subFiles);
             } else {
+                // 应用文件过滤规则
+                if (shouldFilterFile(file)) {
+                    continue;
+                }
+                
                 FileItem item = new FileItem(file);
                 if (filterType == null || filterType == FileItem.FileType.OTHER || 
                     item.getFileType() == filterType) {

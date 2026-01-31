@@ -609,18 +609,20 @@ public class FolderDetailActivity extends AppCompatActivity {
                         success = file.delete();
                         
                         if (success) {
-                            // 等待删除完成
-                            Thread.sleep(50);
+                            // 优化：减少等待时间至30ms（原50ms）
+                            Thread.sleep(30);
                             
                             // 检查并处理0字节文件
                             if (file.exists()) {
                                 if (file.length() == 0) {
-                                    for (int i = 0; i < 3; i++) {
+                                    // 优化：减少重试次数和等待时间（原来3次，每次30ms）
+                                    for (int i = 0; i < 2; i++) {
                                         success = file.delete();
-                                        Thread.sleep(30);
+                                        Thread.sleep(20);
                                         if (!file.exists()) break;
                                     }
                                     
+                                    // 如果仍然存在，尝试清空并删除
                                     if (file.exists()) {
                                         try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
                                             fos.getChannel().truncate(0);
@@ -668,9 +670,15 @@ public class FolderDetailActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // 移除监听器
+        
+        // 移除监听器，避免内存泄漏
         if (pendingDeleteManager != null) {
             pendingDeleteManager.setOnFileDeletedListener(null);
+        }
+        
+        // 清除Adapter中的缓存
+        if (adapter != null) {
+            adapter.clearCache();
         }
     }
 }
