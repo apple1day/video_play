@@ -122,9 +122,11 @@ public class FolderFragment extends Fragment {
             // 更新UI
             if (getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
+                    Log.d(TAG, "更新UI前 - folders.size: " + folders.size() + ", adapter不为空: " + (adapter != null));
                     folders.clear();
                     folders.addAll(folderList);
-                    adapter.updateFolders(folders);
+                    Log.d(TAG, "更新UI中 - folders.size: " + folders.size() + ", folderList.size: " + folderList.size());
+                    adapter.updateFolders(folderList);
                     updateEmptyView();
                     updateFolderCount();
                     Log.d(TAG, "找到 " + folders.size() + " 个文件夹，共 " + finalTotalVideos + " 个视频");

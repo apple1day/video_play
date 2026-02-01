@@ -898,6 +898,7 @@ public class HomeFragment extends Fragment {
                             Long.compare(o2.getLastModified(), o1.getLastModified()));
                         
                         allVideoFiles = new ArrayList<>(allScannedVideos);
+                        HomeFragment.this.allFiles = new ArrayList<>(allScannedFiles);
                         
                         // 保存到缓存
                         cacheManager.saveFileList(allScannedFiles, isInternalStorage);

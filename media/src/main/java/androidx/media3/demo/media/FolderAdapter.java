@@ -1,5 +1,6 @@
 package androidx.media3.demo.media;
 
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,6 +18,7 @@ import java.util.List;
  */
 public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.ViewHolder> {
 
+    private static final String TAG = "FolderAdapter";
     private List<FolderItem> folders = new ArrayList<>();
     private OnFolderClickListener listener;
 
@@ -30,43 +32,20 @@ public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.ViewHolder
     }
 
     public void updateFolders(List<FolderItem> newFolders) {
-        // 使用DiffUtil计算差异，避免全量刷新
-        List<FolderItem> oldFolders = this.folders;
-        DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new DiffUtil.Callback() {
-            @Override
-            public int getOldListSize() {
-                return oldFolders.size();
-            }
-
-            @Override
-            public int getNewListSize() {
-                return newFolders.size();
-            }
-
-            @Override
-            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
-                FolderItem oldItem = oldFolders.get(oldItemPosition);
-                FolderItem newItem = newFolders.get(newItemPosition);
-                return oldItem.getFolderPath().equals(newItem.getFolderPath());
-            }
-
-            @Override
-            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
-                FolderItem oldItem = oldFolders.get(oldItemPosition);
-                FolderItem newItem = newFolders.get(newItemPosition);
-                return oldItem.getFolderPath().equals(newItem.getFolderPath()) &&
-                       oldItem.getVideoCount() == newItem.getVideoCount() &&
-                       oldItem.getTotalSize() == newItem.getTotalSize();
-            }
-        });
+        Log.d(TAG, "updateFolders called, old size: " + this.folders.size() + ", new size: " + newFolders.size());
         
-        this.folders = newFolders;
-        diffResult.dispatchUpdatesTo(this);
+        // 直接更新列表并通知刷新（DiffUtil在某些情况下可能不触发更新）
+        this.folders.clear();
+        this.folders.addAll(newFolders);
+        notifyDataSetChanged();
+        
+        Log.d(TAG, "updateFolders completed, current size: " + this.folders.size() + ", getItemCount: " + getItemCount());
     }
 
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        Log.d(TAG, "onCreateViewHolder called");
         View view = LayoutInflater.from(parent.getContext())
             .inflate(R.layout.item_folder, parent, false);
         return new ViewHolder(view);
@@ -74,13 +53,16 @@ public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.ViewHolder
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        Log.d(TAG, "onBindViewHolder called for position: " + position);
         FolderItem folder = folders.get(position);
         holder.bind(folder);
     }
 
     @Override
     public int getItemCount() {
-        return folders.size();
+        int count = folders.size();
+        Log.d(TAG, "getItemCount called, returning: " + count);
+        return count;
     }
 
     class ViewHolder extends RecyclerView.ViewHolder {
