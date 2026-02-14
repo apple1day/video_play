@@ -483,60 +483,77 @@ public class PlayerActivity extends AppCompatActivity {
             @Override
             public void onPlayerError(androidx.media3.common.PlaybackException error) {
                 // 播放错误时播放下一个
-                playNext();
+                android.util.Log.e(TAG, "Player error: " + error.getMessage());
+                try {
+                    playNext();
+                } catch (Exception e) {
+                    android.util.Log.e(TAG, "Error playing next: " + e.getMessage());
+                    finish();
+                }
             }
 
             @Override
             public void onPlaybackStateChanged(int playbackState) {
-                // 当播放结束时，自动播放下一个
-                if (playbackState == Player.STATE_ENDED) {
-                    // 播放结束，切换到下一个视频
-                    if (player.hasNextMediaItem()) {
-                        player.seekToNextMediaItem();
-                    } else {
-                        // 没有下一个视频，关闭播放器
-                        finish();
+                try {
+                    // 当播放结束时，自动播放下一个
+                    if (playbackState == Player.STATE_ENDED) {
+                        // 播放结束，切换到下一个视频
+                        if (player != null && player.hasNextMediaItem()) {
+                            player.seekToNextMediaItem();
+                        } else {
+                            // 没有下一个视频，关闭播放器
+                            finish();
+                        }
                     }
+                } catch (Exception e) {
+                    android.util.Log.e(TAG, "Error in onPlaybackStateChanged: " + e.getMessage());
                 }
             }
 
             @Override
             public void onMediaItemTransition(MediaItem mediaItem, int reason) {
-                // 当切换到新的视频时，更新当前索引和文件路径
-                if (player.getCurrentMediaItemIndex() >= 0 && 
-                    player.getCurrentMediaItemIndex() < fileList.size()) {
-                    // 保存旧视频的播放位置，并检查是否已观看
-                    if (currentFilePath != null && player.getDuration() > 0) {
-                        long position = player.getCurrentPosition();
-                        long duration = player.getDuration();
+                try {
+                    // 当切换到新的视频时，更新当前索引和文件路径
+                    if (player != null && player.getCurrentMediaItemIndex() >= 0 && 
+                        player.getCurrentMediaItemIndex() < fileList.size()) {
+                        // 保存旧视频的播放位置，并检查是否已观看
+                        if (currentFilePath != null) {
+                            try {
+                                long duration = player.getDuration();
+                                if (duration > 0) {
+                                    long position = player.getCurrentPosition();
+                                    
+                                    playHistoryManager.savePlayPosition(
+                                        currentFilePath, 
+                                        position,
+                                        duration
+                                    );
+                                    
+                                    // 检查并标记为已观看（播放超过80%自动标记）
+                                    watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
+                                }
+                            } catch (Exception e) {
+                                android.util.Log.e(TAG, "Error saving old video position: " + e.getMessage());
+                            }
+                        }
                         
-                        playHistoryManager.savePlayPosition(
-                            currentFilePath, 
-                            position,
-                            duration
-                        );
+                        // 更新当前视频
+                        currentIndex = player.getCurrentMediaItemIndex();
+                        currentFilePath = fileList.get(currentIndex);
+                        updateFavoriteButton();
+                        updatePendingDeleteButton();
                         
-                        // 检查并标记为已观看（播放超过80%自动标记）
-                        watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
-                    }
-                    
-                    // 更新当前视频
-                    currentIndex = player.getCurrentMediaItemIndex();
-                    currentFilePath = fileList.get(currentIndex);
-                    updateFavoriteButton();
-                    updatePendingDeleteButton();
-                    
-                    // 切换到新视频时立即标记为已观看
-                    if (currentFilePath != null) {
-                        watchedManager.markAsWatched(currentFilePath);
-                    }
-                    
-                    // 恢复新视频的播放位置
-                    long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
-                    if (savedPosition > 0) {
-                        player.seekTo(savedPosition);
-                    }
-                    
+                        // 切换到新视频时立即标记为已观看
+                        if (currentFilePath != null) {
+                            watchedManager.markAsWatched(currentFilePath);
+                        }
+                        
+                        // 恢复新视频的播放位置
+                        long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
+                        if (savedPosition > 0) {
+                            player.seekTo(savedPosition);
+                        }
+                        
                     // 检查是否需要预加载更多视频
                     checkAndRequestMoreVideos();
                 }
@@ -686,7 +703,27 @@ public class PlayerActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
+        if (player != null && playerView != null) {
+            playerView.onResume();
+        }
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // 暂停播放器以节省资源
         if (player != null) {
+            player.pause();
+        }
+        if (playerView != null) {
+            playerView.onPause();
+        }
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (player != null && playerView != null) {
             playerView.onResume();
         }
     }
@@ -694,7 +731,7 @@ public class PlayerActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
-        if (player != null) {
+        if (player != null && playerView != null) {
             playerView.onPause();
         }
     }
@@ -704,24 +741,48 @@ public class PlayerActivity extends AppCompatActivity {
         super.onDestroy();
         
         // 保存播放位置，并检查是否已观看
-        if (player != null && currentFilePath != null && player.getDuration() > 0) {
-            long position = player.getCurrentPosition();
-            long duration = player.getDuration();
-            
-            playHistoryManager.savePlayPosition(
-                currentFilePath,
-                position,
-                duration
-            );
-            
-            // 检查并标记为已观看（播放超过80%自动标记）
-            watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
+        if (player != null && currentFilePath != null) {
+            try {
+                long duration = player.getDuration();
+                if (duration > 0) {
+                    long position = player.getCurrentPosition();
+                    
+                    playHistoryManager.savePlayPosition(
+                        currentFilePath,
+                        position,
+                        duration
+                    );
+                    
+                    // 检查并标记为已观看（播放超过80%自动标记）
+                    watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
+                }
+            } catch (Exception e) {
+                // 捕获可能的异常，避免闪退
+                android.util.Log.e(TAG, "Error saving play position: " + e.getMessage());
+            }
         }
         
+        // 释放播放器资源
+        releasePlayer();
+    }
+    
+    private void releasePlayer() {
         if (player != null) {
-            player.release();
-            player = null;
+            try {
+                player.stop();
+                player.release();
+            } catch (Exception e) {
+                android.util.Log.e(TAG, "Error releasing player: " + e.getMessage());
+            } finally {
+                player = null;
+            }
         }
+        
+        // 清理 PlayerView
+        if (playerView != null) {
+            playerView.setPlayer(null);
+        }
+    }
     }
     
     @Override

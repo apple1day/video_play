@@ -60,6 +60,7 @@ public class HomeFragment extends Fragment {
     private Button filterUnwatchedButton;
     private Button viewToggleButton;
     private Button smartFilterButton;
+    private Button deleteAllPendingButton;
     private View toolbarLayout;
     private View selectionToolbarLayout;
     private Button selectAllButton;
@@ -129,6 +130,7 @@ public class HomeFragment extends Fragment {
         filterUnwatchedButton = view.findViewById(R.id.filter_unwatched_button);
         viewToggleButton = view.findViewById(R.id.view_toggle_button);
         smartFilterButton = view.findViewById(R.id.smart_filter_button);
+        deleteAllPendingButton = view.findViewById(R.id.delete_all_pending_button);
         toolbarLayout = view.findViewById(R.id.toolbar_layout);
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
         selectAllButton = view.findViewById(R.id.select_all_button);
@@ -176,6 +178,7 @@ public class HomeFragment extends Fragment {
         setupWatchedFilterButtons();
         setupViewToggleButton();
         setupSmartFilterButton();
+        setupDeleteAllPendingButton();
         setupSelectionButtons();
         
         // 初始化删除线程池和主线程Handler
@@ -498,6 +501,32 @@ public class HomeFragment extends Fragment {
         }
     }
     
+    private void setupDeleteAllPendingButton() {
+        if (deleteAllPendingButton != null) {
+            deleteAllPendingButton.setOnClickListener(v -> {
+                // 获取待删除文件数量
+                int pendingCount = pendingDeleteManager.getPendingCount();
+                
+                if (pendingCount == 0) {
+                    Toast.makeText(getContext(), "没有待删除的视频", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                
+                // 确认对话框
+                new AlertDialog.Builder(getContext())
+                    .setTitle("确认删除")
+                    .setMessage("确定要删除所有 " + pendingCount + " 个待删除的视频吗？")
+                    .setPositiveButton("删除", (dialog, which) -> {
+                        // 执行批量删除
+                        pendingDeleteManager.deleteAllPending();
+                        Toast.makeText(getContext(), "正在删除 " + pendingCount + " 个视频...", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
+            });
+        }
+    }
+    
     private void showSmartFilterDialog() {
         String[] filterOptions = new String[]{
             "按大小筛选",
@@ -679,58 +708,77 @@ public class HomeFragment extends Fragment {
     }
     
     /**
-     * 根据观看状态筛选视频
+     * 根据观看状态筛选视频（优化版 - 在后台线程执行）
      * @param watchedOnly true=只显示已看过的，false=只显示未看过的
      */
     private void filterByWatchedStatus(boolean watchedOnly) {
-        WatchedManager watchedManager = WatchedManager.getInstance(getContext());
-        
-        List<FileItem> filtered = new ArrayList<>();
-        for (FileItem item : allFiles) {
-            if (item.getFileType() == FileItem.FileType.VIDEO) {
-                String filePath = item.getFile().getAbsolutePath();
-                boolean isWatched = watchedManager.isWatched(filePath);
-                
-                // 应用搜索过滤
-                boolean matchesSearch = TextUtils.isEmpty(currentSearchQuery) || 
-                    item.getName().toLowerCase().contains(currentSearchQuery.toLowerCase());
-                
-                // 根据筛选条件决定是否添加
-                if (matchesSearch && ((watchedOnly && isWatched) || (!watchedOnly && !isWatched))) {
-                    filtered.add(item);
-                }
-            }
+        // 显示加载提示
+        if (loadingView != null) {
+            loadingView.setVisibility(View.VISIBLE);
+            loadingView.setText("正在筛选视频...");
         }
         
-        // 应用排序
-        Collections.sort(filtered, (o1, o2) -> {
-            if (currentSort == SortType.TIME) {
-                if (timeSortDescending) {
-                    return Long.compare(o2.getLastModified(), o1.getLastModified());
-                } else {
-                    return Long.compare(o1.getLastModified(), o2.getLastModified());
-                }
-            } else {
-                if (sizeSortDescending) {
-                    return Long.compare(o2.getSize(), o1.getSize());
-                } else {
-                    return Long.compare(o1.getSize(), o2.getSize());
+        // 在后台线程执行筛选操作，避免阻塞主线程
+        new Thread(() -> {
+            WatchedManager watchedManager = WatchedManager.getInstance(getContext());
+            
+            List<FileItem> filtered = new ArrayList<>();
+            for (FileItem item : allFiles) {
+                if (item.getFileType() == FileItem.FileType.VIDEO) {
+                    String filePath = item.getFile().getAbsolutePath();
+                    boolean isWatched = watchedManager.isWatched(filePath);
+                    
+                    // 应用搜索过滤
+                    boolean matchesSearch = TextUtils.isEmpty(currentSearchQuery) || 
+                        item.getName().toLowerCase().contains(currentSearchQuery.toLowerCase());
+                    
+                    // 根据筛选条件决定是否添加
+                    if (matchesSearch && ((watchedOnly && isWatched) || (!watchedOnly && !isWatched))) {
+                        filtered.add(item);
+                    }
                 }
             }
-        });
-        
-        // 保存过滤排序后的完整列表
-        filteredFiles = new ArrayList<>(filtered);
-        
-        // 重置分页状态，加载第一页
-        currentPage = 0;
-        hasMoreData = true;
-        displayedFiles.clear();
-        
-        // 加载第一页数据
-        loadPageData();
-        
-        updateEmptyView();
+            
+            // 应用排序
+            Collections.sort(filtered, (o1, o2) -> {
+                if (currentSort == SortType.TIME) {
+                    if (timeSortDescending) {
+                        return Long.compare(o2.getLastModified(), o1.getLastModified());
+                    } else {
+                        return Long.compare(o1.getLastModified(), o2.getLastModified());
+                    }
+                } else {
+                    if (sizeSortDescending) {
+                        return Long.compare(o2.getSize(), o1.getSize());
+                    } else {
+                        return Long.compare(o1.getSize(), o2.getSize());
+                    }
+                }
+            });
+            
+            // 回到主线程更新UI
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(() -> {
+                    // 保存过滤排序后的完整列表
+                    filteredFiles = new ArrayList<>(filtered);
+                    
+                    // 重置分页状态，加载第一页
+                    currentPage = 0;
+                    hasMoreData = true;
+                    displayedFiles.clear();
+                    
+                    // 加载第一页数据
+                    loadPageData();
+                    
+                    // 隐藏加载提示
+                    if (loadingView != null) {
+                        loadingView.setVisibility(View.GONE);
+                    }
+                    
+                    updateEmptyView();
+                });
+            }
+        }).start();
     }
     
     private void clearFilter() {

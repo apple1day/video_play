@@ -133,6 +133,19 @@
                 android:minWidth="0dp"
                 style="@android:style/Widget.Material.Button.Borderless" />
 
+            <Button
+                android:id="@+id/delete_all_pending_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.2"
+                android:text="删全部"
+                android:textSize="11sp"
+                android:textColor="@android:color/holo_red_dark"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp"
+                android:minWidth="0dp"
+                style="@android:style/Widget.Material.Button.Borderless" />
+
         </LinearLayout>
 
     </LinearLayout>
