@@ -554,8 +554,11 @@ public class PlayerActivity extends AppCompatActivity {
                             player.seekTo(savedPosition);
                         }
                         
-                    // 检查是否需要预加载更多视频
-                    checkAndRequestMoreVideos();
+                        // 检查是否需要预加载更多视频
+                        checkAndRequestMoreVideos();
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e(TAG, "Error in onMediaItemTransition: " + e.getMessage());
                 }
             }
         });
@@ -782,7 +785,6 @@ public class PlayerActivity extends AppCompatActivity {
         if (playerView != null) {
             playerView.setPlayer(null);
         }
-    }
     }
     
     @Override
