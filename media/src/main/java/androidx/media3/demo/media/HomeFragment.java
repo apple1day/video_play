@@ -84,6 +84,7 @@ public class HomeFragment extends Fragment {
     private ExecutorService deleteExecutor;
     private Handler mainHandler;
     private PendingDeleteManager pendingDeleteManager;
+    private PendingDeleteManager.OnFileDeletedListener pendingDeleteListener;
     private FileListCacheManager cacheManager;
     
     // 分页相关
@@ -190,7 +191,7 @@ public class HomeFragment extends Fragment {
         
         // 初始化待删除管理器并设置监听器
         pendingDeleteManager = PendingDeleteManager.getInstance(getContext());
-        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+        pendingDeleteListener = new PendingDeleteManager.OnFileDeletedListener() {
             @Override
             public void onFileDeleted(String filePath, boolean success, String errorMessage) {
                 // 单个文件删除后刷新列表
@@ -205,7 +206,8 @@ public class HomeFragment extends Fragment {
                 refreshFiles();
                 // Toast提示已在PendingDeleteManager中显示
             }
-        });
+        };
+        pendingDeleteManager.addOnFileDeletedListener(pendingDeleteListener);
         
         // 注册视频列表监听器，供 PlayerActivity 使用
         videoListLoadListener = new VideoListLoadListener() {
@@ -271,14 +273,20 @@ public class HomeFragment extends Fragment {
                     return;
                 }
                 
-                LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
-                if (layoutManager == null) {
+                RecyclerView.LayoutManager lm = recyclerView.getLayoutManager();
+                if (lm == null) {
                     return;
                 }
                 
-                int visibleItemCount = layoutManager.getChildCount();
-                int totalItemCount = layoutManager.getItemCount();
-                int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
+                int visibleItemCount = lm.getChildCount();
+                int totalItemCount = lm.getItemCount();
+                int firstVisibleItemPosition = 0;
+                
+                if (lm instanceof LinearLayoutManager) {
+                    firstVisibleItemPosition = ((LinearLayoutManager) lm).findFirstVisibleItemPosition();
+                } else if (lm instanceof GridLayoutManager) {
+                    firstVisibleItemPosition = ((GridLayoutManager) lm).findFirstVisibleItemPosition();
+                }
                 
                 // 当滚动到底部附近（最后5个item）时加载更多
                 if (!isLoading && hasMoreData && 
@@ -1493,8 +1501,9 @@ public class HomeFragment extends Fragment {
         }
         
         // 移除监听器，避免内存泄漏
-        if (pendingDeleteManager != null) {
-            pendingDeleteManager.setOnFileDeletedListener(null);
+        if (pendingDeleteManager != null && pendingDeleteListener != null) {
+            pendingDeleteManager.removeOnFileDeletedListener(pendingDeleteListener);
+            pendingDeleteListener = null;
         }
         
         // 清除视频列表监听器

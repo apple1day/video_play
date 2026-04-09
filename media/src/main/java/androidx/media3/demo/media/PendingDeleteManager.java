@@ -1,10 +1,15 @@
 package androidx.media3.demo.media;
 
+import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.Gravity;
 import android.widget.Toast;
@@ -14,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -32,7 +38,8 @@ public class PendingDeleteManager {
     private Context context;
     private ExecutorService deleteExecutor;
     private Handler mainHandler;
-    private OnFileDeletedListener onFileDeletedListener;
+    // 使用线程安全列表支持多个监听器，避免单例下相互覆盖
+    private final CopyOnWriteArrayList<OnFileDeletedListener> listeners = new CopyOnWriteArrayList<>();
     
     /**
      * 文件删除监听器
@@ -57,10 +64,31 @@ public class PendingDeleteManager {
     }
     
     /**
-     * 设置文件删除监听器
+     * 添加文件删除监听器（支持多个）
      */
+    public void addOnFileDeletedListener(OnFileDeletedListener listener) {
+        if (listener != null && !listeners.contains(listener)) {
+            listeners.add(listener);
+        }
+    }
+    
+    /**
+     * 移除文件删除监听器
+     */
+    public void removeOnFileDeletedListener(OnFileDeletedListener listener) {
+        listeners.remove(listener);
+    }
+    
+    /**
+     * 设置文件删除监听器（兼容旧接口，等效于先清空再添加）
+     * @deprecated 推荐使用 addOnFileDeletedListener / removeOnFileDeletedListener
+     */
+    @Deprecated
     public void setOnFileDeletedListener(OnFileDeletedListener listener) {
-        this.onFileDeletedListener = listener;
+        listeners.clear();
+        if (listener != null) {
+            listeners.add(listener);
+        }
     }
     
     /**
@@ -102,11 +130,15 @@ public class PendingDeleteManager {
                 }
                 
                 // 通知监听器
-                if (onFileDeletedListener != null) {
+                if (!listeners.isEmpty()) {
                     final String file = firstFile;
                     final boolean success = result.success;
                     final String error = result.errorMessage;
-                    mainHandler.post(() -> onFileDeletedListener.onFileDeleted(file, success, error));
+                    mainHandler.post(() -> {
+                        for (OnFileDeletedListener l : listeners) {
+                            l.onFileDeleted(file, success, error);
+                        }
+                    });
                 }
                 
                 // 显示删除结果
@@ -196,8 +228,8 @@ public class PendingDeleteManager {
             final List<String> finalFailedFiles = new ArrayList<>(failedFiles);
             
             mainHandler.post(() -> {
-                if (onFileDeletedListener != null) {
-                    onFileDeletedListener.onFilesDeleted(finalSuccessCount, finalFailCount, finalFailedFiles);
+                for (OnFileDeletedListener l : listeners) {
+                    l.onFilesDeleted(finalSuccessCount, finalFailCount, finalFailedFiles);
                 }
                 
                 // 显示删除结果（顶部弹窗）
@@ -265,11 +297,15 @@ public class PendingDeleteManager {
             }
             
             // 通知监听器
-            if (onFileDeletedListener != null) {
+            if (!listeners.isEmpty()) {
                 final String file = firstFile;
                 final boolean success = result.success;
                 final String error = result.errorMessage;
-                mainHandler.post(() -> onFileDeletedListener.onFileDeleted(file, success, error));
+                mainHandler.post(() -> {
+                    for (OnFileDeletedListener l : listeners) {
+                        l.onFileDeleted(file, success, error);
+                    }
+                });
             }
             
             // 显示删除结果
@@ -302,8 +338,8 @@ public class PendingDeleteManager {
             DeleteResult result = deleteFileSync(filePath);
             // 在主线程回调
             mainHandler.post(() -> {
-                if (onFileDeletedListener != null) {
-                    onFileDeletedListener.onFileDeleted(filePath, result.success, result.errorMessage);
+                for (OnFileDeletedListener l : listeners) {
+                    l.onFileDeleted(filePath, result.success, result.errorMessage);
                 }
             });
         });
@@ -484,18 +520,34 @@ public class PendingDeleteManager {
     }
     
     /**
-     * 通知媒体扫描器文件已删除
+     * 通知媒体库文件已被删除：从 MediaStore 中删除对应记录。
+     * 使用 ContentResolver 删除而非 scanFile，避免扫描器重新创建0字节占位文件。
      */
     private void notifyMediaStoreDeleted(File file) {
         try {
-            android.media.MediaScannerConnection.scanFile(
-                context,
-                new String[]{file.getAbsolutePath()},
-                null,
-                null
-            );
+            ContentResolver resolver = context.getContentResolver();
+            Uri collection;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL);
+            } else {
+                collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+            }
+            // 查找并删除 MediaStore 中对应的条目
+            String selection = MediaStore.Video.Media.DATA + "=?";
+            String[] selectionArgs = {file.getAbsolutePath()};
+            int deleted = resolver.delete(collection, selection, selectionArgs);
+            if (deleted > 0) {
+                Log.d(TAG, "notifyMediaStoreDeleted: 已从MediaStore删除记录 - " + file.getName());
+            } else {
+                // MediaStore 中没有找到记录，也尝试图片库（兼容性处理）
+                Uri imageCollection = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    ? MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+                    : MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                resolver.delete(imageCollection, MediaStore.Images.Media.DATA + "=?", selectionArgs);
+                Log.d(TAG, "notifyMediaStoreDeleted: MediaStore中无对应视频记录 - " + file.getName());
+            }
         } catch (Exception e) {
-            Log.w(TAG, "notifyMediaStoreDeleted: 通知媒体扫描器失败", e);
+            Log.w(TAG, "notifyMediaStoreDeleted: 从MediaStore删除记录失败", e);
         }
     }
     

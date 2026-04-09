@@ -19,9 +19,11 @@
         android:background="?attr/colorPrimary"
         app:tabMode="fixed"
         app:tabGravity="fill"
-        app:tabIndicatorHeight="0dp"
+        app:tabIndicatorHeight="3dp"
+        app:tabIndicatorColor="#FF5252"
         app:tabTextColor="@android:color/black"
-        app:tabSelectedTextColor="@android:color/black" />
+        app:tabSelectedTextColor="@android:color/black"
+        app:tabTextAppearance="@android:style/TextAppearance.Small" />
 
 </LinearLayout>
 

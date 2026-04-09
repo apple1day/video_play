@@ -36,9 +36,12 @@ public class MainActivity extends AppCompatActivity {
                     tab.setText(R.string.tab_home);
                     break;
                 case 1:
-                    tab.setText(R.string.tab_folders);
+                    tab.setText(R.string.tab_pending_delete);
                     break;
                 case 2:
+                    tab.setText(R.string.tab_folders);
+                    break;
+                case 3:
                     tab.setText(R.string.tab_more);
                     break;
             }
@@ -58,6 +61,8 @@ public class MainActivity extends AppCompatActivity {
             Fragment fragment = getSupportFragmentManager().findFragmentByTag("f" + viewPager.getCurrentItem());
             if (fragment instanceof HomeFragment) {
                 ((HomeFragment) fragment).refreshFiles();
+            } else if (fragment instanceof PendingDeleteFragment) {
+                ((PendingDeleteFragment) fragment).loadPendingFiles();
             } else if (fragment instanceof FolderFragment) {
                 ((FolderFragment) fragment).refreshFolders();
             } else if (fragment instanceof MoreFragment) {
@@ -78,8 +83,10 @@ public class MainActivity extends AppCompatActivity {
                 case 0:
                     return new HomeFragment();
                 case 1:
-                    return new FolderFragment();
+                    return new PendingDeleteFragment();
                 case 2:
+                    return new FolderFragment();
+                case 3:
                     return new MoreFragment();
                 default:
                     return new HomeFragment();
@@ -88,7 +95,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public int getItemCount() {
-            return 3;
+            return 4;
         }
     }
 }

@@ -38,6 +38,7 @@ public class MoreFragment extends Fragment {
     private List<File> storageRoots = new ArrayList<>();
     private FavoriteManager favoriteManager;
     private PendingDeleteManager pendingDeleteManager;
+    private PendingDeleteManager.OnFileDeletedListener pendingDeleteListener;
 
     @Nullable
     @Override
@@ -53,8 +54,8 @@ public class MoreFragment extends Fragment {
         favoriteManager = FavoriteManager.getInstance(getContext());
         pendingDeleteManager = PendingDeleteManager.getInstance(getContext());
         
-        // 设置文件删除监听器
-        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+        // 设置文件删除监听器（使用 add 方式，不覆盖其他监听器）
+        pendingDeleteListener = new PendingDeleteManager.OnFileDeletedListener() {
             @Override
             public void onFileDeleted(String filePath, boolean success, String errorMessage) {
                 // 文件删除后刷新列表
@@ -70,7 +71,8 @@ public class MoreFragment extends Fragment {
                     getActivity().runOnUiThread(() -> refreshCurrentDirectory());
                 }
             }
-        });
+        };
+        pendingDeleteManager.addOnFileDeletedListener(pendingDeleteListener);
 
         adapter = new FileBrowserAdapter(new ArrayList<>(), item -> {
             if (item.isDirectory()) {
@@ -395,8 +397,9 @@ public class MoreFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         // 移除监听器
-        if (pendingDeleteManager != null) {
-            pendingDeleteManager.setOnFileDeletedListener(null);
+        if (pendingDeleteManager != null && pendingDeleteListener != null) {
+            pendingDeleteManager.removeOnFileDeletedListener(pendingDeleteListener);
+            pendingDeleteListener = null;
         }
     }
 

@@ -52,6 +52,7 @@ public class FolderDetailActivity extends AppCompatActivity {
     
     private FavoriteManager favoriteManager;
     private PendingDeleteManager pendingDeleteManager;
+    private PendingDeleteManager.OnFileDeletedListener pendingDeleteListener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,8 +72,8 @@ public class FolderDetailActivity extends AppCompatActivity {
         favoriteManager = FavoriteManager.getInstance(this);
         pendingDeleteManager = PendingDeleteManager.getInstance(this);
         
-        // 设置文件删除监听器
-        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+        // 设置文件删除监听器（使用 add 方式，不覆盖其他监听器）
+        pendingDeleteListener = new PendingDeleteManager.OnFileDeletedListener() {
             @Override
             public void onFileDeleted(String filePath, boolean success, String errorMessage) {
                 // 文件删除后刷新列表
@@ -86,7 +87,8 @@ public class FolderDetailActivity extends AppCompatActivity {
                 // 批量删除后刷新列表
                 runOnUiThread(() -> loadVideos());
             }
-        });
+        };
+        pendingDeleteManager.addOnFileDeletedListener(pendingDeleteListener);
 
         initViews();
         loadVideos();
@@ -672,8 +674,9 @@ public class FolderDetailActivity extends AppCompatActivity {
         super.onDestroy();
         
         // 移除监听器，避免内存泄漏
-        if (pendingDeleteManager != null) {
-            pendingDeleteManager.setOnFileDeletedListener(null);
+        if (pendingDeleteManager != null && pendingDeleteListener != null) {
+            pendingDeleteManager.removeOnFileDeletedListener(pendingDeleteListener);
+            pendingDeleteListener = null;
         }
         
         // 清除Adapter中的缓存
