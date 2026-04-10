@@ -50,8 +50,9 @@ public class HomeFragment extends Fragment {
     private SearchView searchView;
     private SwipeRefreshLayout swipeRefreshLayout;
     private RecyclerView recyclerView;
-    private TextView emptyView;
-    private TextView loadingView;
+    private View emptyView;
+    private View loadingView;
+    private TextView loadingTextView;
     private TextView loadingMoreView;
     private Spinner storageSpinner;
     private Button sortTimeButton;
@@ -123,6 +124,7 @@ public class HomeFragment extends Fragment {
         recyclerView = view.findViewById(R.id.recycler_view);
         emptyView = view.findViewById(R.id.empty_view);
         loadingView = view.findViewById(R.id.loading_view);
+        loadingTextView = view.findViewById(R.id.loading_text);
         loadingMoreView = view.findViewById(R.id.loading_more_view);
         storageSpinner = view.findViewById(R.id.storage_spinner);
         sortTimeButton = view.findViewById(R.id.sort_time_button);
@@ -298,11 +300,10 @@ public class HomeFragment extends Fragment {
     }
     
     private void setupSwipeRefresh() {
-        swipeRefreshLayout.setColorSchemeResources(
-            android.R.color.holo_blue_bright,
-            android.R.color.holo_green_light,
-            android.R.color.holo_orange_light,
-            android.R.color.holo_red_light
+        swipeRefreshLayout.setColorSchemeColors(
+            0xFF_FF6B35,  // 品牌橙红
+            0xFF_E53935,  // 深红
+            0xFF_FF8A65   // 浅橙
         );
         
         swipeRefreshLayout.setOnRefreshListener(() -> {
@@ -723,7 +724,7 @@ public class HomeFragment extends Fragment {
         // 显示加载提示
         if (loadingView != null) {
             loadingView.setVisibility(View.VISIBLE);
-            loadingView.setText("正在筛选视频...");
+            if (loadingTextView != null) loadingTextView.setText("正在筛选视频...");
         }
         
         // 在后台线程执行筛选操作，避免阻塞主线程
@@ -937,7 +938,7 @@ public class HomeFragment extends Fragment {
                             
                             // 优化：仅更新加载提示文本，不触发排序和UI刷新
                             if (loadingView != null) {
-                                loadingView.setText("正在加载视频... 已找到 " + allScannedVideos.size() + " 个");
+                                if (loadingTextView != null) loadingTextView.setText("正在加载视频... 已找到 " + allScannedVideos.size() + " 个");
                             }
                             
                             Log.d(TAG, "已加载 " + allScannedFiles.size() + " 个文件（增量更新）");

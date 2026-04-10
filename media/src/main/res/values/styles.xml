@@ -9,5 +9,11 @@
     <style name="TransparentPlayerControlView" parent="Widget.AppCompat.ActionButton">
         <item name="android:background">@android:color/transparent</item>
     </style>
+
+    <!-- 底部导航 Tab 文字样式 -->
+    <style name="BottomTabTextAppearance" parent="TextAppearance.AppCompat">
+        <item name="android:textSize">10sp</item>
+        <item name="android:textStyle">normal</item>
+    </style>
 </resources>
 

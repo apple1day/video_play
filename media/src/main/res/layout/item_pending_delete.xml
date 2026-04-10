@@ -1,77 +1,89 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<androidx.cardview.widget.CardView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:padding="12dp"
-    android:gravity="center_vertical"
-    android:background="#FFFFFF"
+    android:layout_marginStart="4dp"
+    android:layout_marginEnd="4dp"
+    android:layout_marginBottom="6dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="2dp"
+    app:cardBackgroundColor="#FFFFFF"
     android:foreground="?android:attr/selectableItemBackground"
     android:clickable="true"
-    android:focusable="true"
-    android:minHeight="72dp"
-    android:layout_marginBottom="2dp">
+    android:focusable="true">
 
-    <!-- 缩略图 -->
-    <ImageView
-        android:id="@+id/thumbnail"
-        android:layout_width="88dp"
-        android:layout_height="66dp"
-        android:layout_marginEnd="12dp"
-        android:scaleType="centerCrop"
-        android:background="#FFEBEE"
-        android:src="@android:drawable/ic_menu_delete" />
-
-    <!-- 信息区域 -->
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:padding="10dp"
+        android:gravity="center_vertical"
+        android:minHeight="76dp">
 
-        <TextView
-            android:id="@+id/file_name"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#212121"
-            android:maxLines="2"
-            android:ellipsize="end"
-            android:lineSpacingMultiplier="1.1" />
+        <!-- 缩略图（圆角） -->
+        <ImageView
+            android:id="@+id/thumbnail"
+            android:layout_width="108dp"
+            android:layout_height="70dp"
+            android:layout_marginEnd="12dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/thumbnail_bg_delete"
+            android:src="@android:drawable/ic_menu_delete" />
 
-        <TextView
-            android:id="@+id/file_info"
-            android:layout_width="match_parent"
+        <!-- 信息区域 -->
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:textColor="#757575"
-            android:layout_marginTop="3dp"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/status_badge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="待删除"
-            android:textSize="10sp"
-            android:textColor="#D32F2F"
-            android:background="#FFEBEE"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp"
-            android:layout_marginTop="4dp" />
+            <TextView
+                android:id="@+id/file_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#1A1A1A"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:lineSpacingMultiplier="1.2" />
+
+            <TextView
+                android:id="@+id/file_info"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="11sp"
+                android:textColor="#BDBDBD"
+                android:layout_marginTop="4dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/status_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="待删除"
+                android:textSize="10sp"
+                android:textColor="#E53935"
+                android:background="@drawable/badge_delete"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:layout_marginTop="6dp" />
+
+        </LinearLayout>
+
+        <!-- 右侧操作提示 -->
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@android:drawable/ic_menu_more"
+            android:layout_marginStart="8dp"
+            android:alpha="0.4" />
 
     </LinearLayout>
 
-    <!-- 右侧提示图标 -->
-    <ImageView
-        android:layout_width="20dp"
-        android:layout_height="20dp"
-        android:src="@android:drawable/ic_menu_more"
-        android:layout_marginStart="8dp" />
-
-</LinearLayout>
+</androidx.cardview.widget.CardView>

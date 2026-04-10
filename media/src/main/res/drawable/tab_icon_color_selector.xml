@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tab 图标颜色选择器：选中橙红色，未选中灰色 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#FF6B35" android:state_selected="true" />
+    <item android:color="#999999" />
+</selector>

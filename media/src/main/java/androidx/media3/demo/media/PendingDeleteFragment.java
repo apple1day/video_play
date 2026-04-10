@@ -29,7 +29,7 @@ public class PendingDeleteFragment extends Fragment {
     private static final String TAG = "PendingDeleteFragment";
 
     private RecyclerView recyclerView;
-    private TextView emptyView;
+    private View emptyView;
     private TextView countText;
     private Button deleteAllButton;
     private PendingDeleteListAdapter adapter;

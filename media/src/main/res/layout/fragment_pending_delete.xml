@@ -4,82 +4,112 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F5F5F5">
+    android:background="#F8F9FA">
 
-    <!-- 顶部标题栏 -->
+    <!-- 顶部 Header -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="12dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:background="#FFFFFF"
-        android:elevation="2dp">
+        android:elevation="4dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="12dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="待删除视频"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="#212121" />
+                android:layout_weight="1"
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/count_text"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="待删除"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="#1A1A1A" />
+
+                <TextView
+                    android:id="@+id/count_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="暂无待删除视频"
+                    android:textSize="12sp"
+                    android:textColor="#BDBDBD"
+                    android:layout_marginTop="2dp" />
+
+            </LinearLayout>
+
+            <!-- 全部删除按钮 -->
+            <Button
+                android:id="@+id/delete_all_button"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="暂无待删除视频"
-                android:textSize="12sp"
-                android:textColor="#757575"
-                android:layout_marginTop="1dp" />
+                android:layout_height="36dp"
+                android:text="全部删除"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:background="@drawable/btn_delete_red"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:enabled="false"
+                android:alpha="0.5"
+                style="@android:style/Widget.Material.Button.Borderless" />
 
         </LinearLayout>
 
-        <!-- 全部删除按钮（右上角） -->
-        <Button
-            android:id="@+id/delete_all_button"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="全部删除"
-            android:textSize="13sp"
-            android:textColor="#FFFFFF"
-            android:background="@drawable/btn_delete_red"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:enabled="false"
-            android:alpha="0.5" />
+        <!-- 提示文字 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="长按视频可取消标记或立即删除"
+            android:textSize="11sp"
+            android:textColor="#BDBDBD"
+            android:layout_marginTop="6dp" />
 
     </LinearLayout>
 
-    <!-- 提示说明 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="以下视频已被标记为待删除，长按可取消标记或立即删除"
-        android:textSize="12sp"
-        android:textColor="#9E9E9E"
-        android:padding="12dp"
-        android:background="#FAFAFA" />
-
     <!-- 空状态视图 -->
-    <TextView
+    <LinearLayout
         android:id="@+id/empty_view"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:orientation="vertical"
         android:gravity="center"
-        android:text="暂无待删除视频\n\n在播放器中点击删除图标可标记视频"
-        android:textSize="15sp"
-        android:textColor="#9E9E9E"
-        android:lineSpacingMultiplier="1.4"
-        android:visibility="gone" />
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🗑️"
+            android:textSize="52sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="暂无待删除视频"
+            android:textSize="16sp"
+            android:textColor="#BDBDBD"
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="在播放器中标记视频后会显示在这里"
+            android:textSize="13sp"
+            android:textColor="#D0D0D0"
+            android:layout_marginTop="6dp" />
+
+    </LinearLayout>
 
     <!-- 列表 -->
     <androidx.recyclerview.widget.RecyclerView
@@ -88,7 +118,9 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
-        android:paddingTop="4dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="8dp"
         android:paddingBottom="16dp"
         android:visibility="gone" />
 

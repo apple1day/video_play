@@ -34,15 +34,19 @@ public class MainActivity extends AppCompatActivity {
             switch (position) {
                 case 0:
                     tab.setText(R.string.tab_home);
+                    tab.setIcon(android.R.drawable.ic_menu_gallery);
                     break;
                 case 1:
                     tab.setText(R.string.tab_pending_delete);
+                    tab.setIcon(android.R.drawable.ic_menu_delete);
                     break;
                 case 2:
                     tab.setText(R.string.tab_folders);
+                    tab.setIcon(android.R.drawable.ic_menu_agenda);
                     break;
                 case 3:
                     tab.setText(R.string.tab_more);
+                    tab.setIcon(android.R.drawable.ic_menu_more);
                     break;
             }
         }).attach();
