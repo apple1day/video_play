@@ -1,10 +1,8 @@
 package androidx.media3.demo.media;
 
 import android.content.ContentResolver;
-import android.content.ContentUris;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -77,18 +75,6 @@ public class PendingDeleteManager {
      */
     public void removeOnFileDeletedListener(OnFileDeletedListener listener) {
         listeners.remove(listener);
-    }
-    
-    /**
-     * 设置文件删除监听器（兼容旧接口，等效于先清空再添加）
-     * @deprecated 推荐使用 addOnFileDeletedListener / removeOnFileDeletedListener
-     */
-    @Deprecated
-    public void setOnFileDeletedListener(OnFileDeletedListener listener) {
-        listeners.clear();
-        if (listener != null) {
-            listeners.add(listener);
-        }
     }
     
     /**
@@ -328,21 +314,6 @@ public class PendingDeleteManager {
     private void savePendingFiles(Set<String> files) {
         // SharedPreferences 要求使用新的 Set 对象
         prefs.edit().putStringSet(KEY_PENDING_FILES, new LinkedHashSet<>(files)).apply();
-    }
-    
-    /**
-     * 异步删除单个文件
-     */
-    private void deleteFileAsync(String filePath) {
-        deleteExecutor.execute(() -> {
-            DeleteResult result = deleteFileSync(filePath);
-            // 在主线程回调
-            mainHandler.post(() -> {
-                for (OnFileDeletedListener l : listeners) {
-                    l.onFileDeleted(filePath, result.success, result.errorMessage);
-                }
-            });
-        });
     }
     
     /**

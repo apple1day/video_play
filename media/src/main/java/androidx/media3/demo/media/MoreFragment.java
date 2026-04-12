@@ -9,7 +9,6 @@ import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.MimeTypeMap;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -306,17 +305,19 @@ public class MoreFragment extends Fragment {
                                 }
                             }
                             
-                            // 通知媒体扫描器更新
+                            // 通知 MediaStore 删除记录
                             if (success && getContext() != null) {
                                 try {
-                                    android.media.MediaScannerConnection.scanFile(
-                                        getContext(),
-                                        new String[]{file.getAbsolutePath()},
-                                        null,
-                                        null
+                                    android.net.Uri collection = (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
+                                        ? android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL)
+                                        : android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                                    getContext().getContentResolver().delete(
+                                        collection,
+                                        android.provider.MediaStore.Video.Media.DATA + "=?",
+                                        new String[]{file.getAbsolutePath()}
                                     );
                                 } catch (Exception e) {
-                                    // 忽略扫描错误
+                                    // 忽略
                                 }
                             }
                         } else {

@@ -1,6 +1,8 @@
 package androidx.media3.demo.media;
 
 import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -8,6 +10,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
@@ -39,10 +42,39 @@ public class PendingDeleteListAdapter extends RecyclerView.Adapter<PendingDelete
         this.longClickListener = longClickListener;
     }
 
+    /**
+     * 使用 DiffUtil 精确更新列表，避免全量刷新导致的闪烁和性能损耗
+     */
     public void updateItems(List<PendingDeleteFragment.PendingVideoItem> newItems) {
+        final List<PendingDeleteFragment.PendingVideoItem> oldItems = new ArrayList<>(this.items);
+        DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override
+            public int getOldListSize() {
+                return oldItems.size();
+            }
+
+            @Override
+            public int getNewListSize() {
+                return newItems.size();
+            }
+
+            @Override
+            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                return oldItems.get(oldItemPosition).getFile().getAbsolutePath()
+                        .equals(newItems.get(newItemPosition).getFile().getAbsolutePath());
+            }
+
+            @Override
+            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                PendingDeleteFragment.PendingVideoItem oldItem = oldItems.get(oldItemPosition);
+                PendingDeleteFragment.PendingVideoItem newItem = newItems.get(newItemPosition);
+                return oldItem.getFile().length() == newItem.getFile().length()
+                        && oldItem.getLastModified() == newItem.getLastModified();
+            }
+        });
         this.items.clear();
         this.items.addAll(newItems);
-        notifyDataSetChanged();
+        diffResult.dispatchUpdatesTo(this);
     }
 
     @NonNull
@@ -78,14 +110,15 @@ public class PendingDeleteListAdapter extends RecyclerView.Adapter<PendingDelete
             statusBadge = itemView.findViewById(R.id.status_badge);
 
             itemView.setOnClickListener(v -> {
-                int pos = getAdapterPosition();
+                // 使用 getBindingAdapterPosition() 替代已弃用的 getAdapterPosition()
+                int pos = getBindingAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION && clickListener != null) {
                     clickListener.onItemClick(items.get(pos));
                 }
             });
 
             itemView.setOnLongClickListener(v -> {
-                int pos = getAdapterPosition();
+                int pos = getBindingAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION && longClickListener != null) {
                     return longClickListener.onItemLongClick(items.get(pos));
                 }
@@ -123,7 +156,9 @@ public class PendingDeleteListAdapter extends RecyclerView.Adapter<PendingDelete
                 thumbnail.clearColorFilter();
             } else if (thumbnail != null) {
                 thumbnail.setImageResource(android.R.drawable.ic_menu_delete);
-                thumbnail.setColorFilter(Color.parseColor("#FFCCCC"), android.graphics.PorterDuff.Mode.SRC_IN);
+                // 使用 PorterDuffColorFilter 替代已弃用的 setColorFilter(int, PorterDuff.Mode)
+                thumbnail.setColorFilter(new PorterDuffColorFilter(
+                    Color.parseColor("#FFCCCC"), PorterDuff.Mode.SRC_IN));
             }
         }
     }

@@ -2,7 +2,6 @@ package androidx.media3.demo.media;
 
 import android.content.ContentResolver;
 import android.content.Intent;
-import android.content.res.Resources;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -11,9 +10,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
-import android.util.DisplayMetrics;
 import android.util.Log;
-import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,7 +35,6 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -1141,30 +1137,6 @@ public class HomeFragment extends Fragment {
     }
 
     /**
-     * 获取所有视频文件的路径列表（用于播放器）
-     * 返回所有查询到的视频，不管当前筛选条件
-     */
-    private ArrayList<String> getAllVideoFileList() {
-        ArrayList<String> fileList = new ArrayList<>();
-        for (FileItem item : allVideoFiles) {
-            fileList.add(item.getFile().getAbsolutePath());
-        }
-        return fileList;
-    }
-    
-    /**
-     * 在所有视频列表中找到指定路径的索引
-     */
-    private int findVideoIndexInAllList(String filePath) {
-        for (int i = 0; i < allVideoFiles.size(); i++) {
-            if (allVideoFiles.get(i).getFile().getAbsolutePath().equals(filePath)) {
-                return i;
-            }
-        }
-        return 0; // 如果找不到，返回 0
-    }
-    
-    /**
      * 删除选中的文件
      */
     private void deleteSelectedFiles(List<FileItem> selectedItems) {
@@ -1255,17 +1227,19 @@ public class HomeFragment extends Fragment {
                         }
                     }
                     
-                    // 通知媒体扫描器更新
+                    // 通知 MediaStore 删除记录
                     if (deleted) {
                         try {
-                            android.media.MediaScannerConnection.scanFile(
-                                getContext(),
-                                new String[]{file.getAbsolutePath()},
-                                null,
-                                null
+                            android.net.Uri collection = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                                ? MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+                                : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                            getContext().getContentResolver().delete(
+                                collection,
+                                MediaStore.Video.Media.DATA + "=?",
+                                new String[]{file.getAbsolutePath()}
                             );
                         } catch (Exception e) {
-                            Log.w(TAG, "deleteSelectedFiles: 通知媒体扫描器失败", e);
+                            Log.w(TAG, "deleteSelectedFiles: 通知MediaStore失败", e);
                         }
                     }
                 }
