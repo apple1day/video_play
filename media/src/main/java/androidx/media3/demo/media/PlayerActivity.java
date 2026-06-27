@@ -1,13 +1,21 @@
 package androidx.media3.demo.media;
 
+import android.app.PictureInPictureParams;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.provider.Settings;
+import android.util.Rational;
 import android.view.GestureDetector;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -18,6 +26,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -56,10 +67,28 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean isAdjustingVolume = false;
     private boolean isAdjustingBrightness = false;
 
+    // 画中画 / 后台播放
+    private boolean inPipMode = false;
+    private boolean userLeaving = false;
+    @androidx.annotation.Nullable private PlaybackService boundService;
+    private final ServiceConnection serviceConn = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            if (service instanceof PlaybackService.LocalBinder) {
+                boundService = ((PlaybackService.LocalBinder) service).service;
+                if (player != null) boundService.attachPlayer(player);
+                pushServiceMetadata();
+            }
+        }
+        @Override public void onServiceDisconnected(ComponentName name) { boundService = null; }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 启用边到边布局，便于沉浸式
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_player);
+        applyImmersive(true);
         
         playerView = findViewById(R.id.player_view);
         seekOverlay = findViewById(R.id.seek_overlay);
@@ -442,6 +471,7 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         player = new ExoPlayer.Builder(this).build();
+        player.setHandleAudioBecomingNoisy(true);
         playerView.setPlayer(player);
 
         // 将所有视频文件转换为 MediaItem 列表
@@ -542,6 +572,7 @@ public class PlayerActivity extends AppCompatActivity {
                         currentFilePath = fileList.get(currentIndex);
                         updateFavoriteButton();
                         updatePendingDeleteButton();
+                        pushServiceMetadata();
                         
                         // 切换到新视频时立即标记为已观看
                         if (currentFilePath != null) {
@@ -709,53 +740,132 @@ public class PlayerActivity extends AppCompatActivity {
         if (player != null && playerView != null) {
             playerView.onResume();
         }
+        // 绑定后台服务（用于通知/锁屏控制）
+        Intent svc = new Intent(this, PlaybackService.class)
+                .putExtra(PlaybackService.EXTRA_FILE_PATH, currentFilePath);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(svc);
+        } else {
+            startService(svc);
+        }
+        bindService(new Intent(this, PlaybackService.class), serviceConn, Context.BIND_AUTO_CREATE);
     }
-    
+
     @Override
     protected void onPause() {
         super.onPause();
-        // 暂停播放器以节省资源
-        if (player != null) {
-            player.pause();
-        }
         if (playerView != null) {
             playerView.onPause();
         }
+        // 进入 PiP 或用户主动按 Home 时，不暂停（继续后台播放）；其他情况暂停
+        if (!inPipMode && !userLeaving && player != null) {
+            player.pause();
+        }
+        userLeaving = false;
     }
-    
+
     @Override
     protected void onResume() {
         super.onResume();
         if (player != null && playerView != null) {
             playerView.onResume();
         }
+        applyImmersive(true);
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        if (player != null && playerView != null) {
+        if (playerView != null) {
             playerView.onPause();
         }
+        // 解绑服务；若播放器已暂停则停止前台
+        try { unbindService(serviceConn); } catch (Exception ignored) {}
+        if (player != null && !player.isPlaying()) {
+            stopService(new Intent(this, PlaybackService.class));
+        }
+    }
+
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        // 用户按 Home/最近任务键时，自动进入 PiP（仅在播放中）
+        userLeaving = true;
+        tryEnterPip();
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        inPipMode = isInPictureInPictureMode;
+        if (playerView != null) {
+            // PiP 模式下隐藏播放控制
+            playerView.setUseController(!isInPictureInPictureMode);
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyImmersive(true);
+    }
+
+    private void tryEnterPip() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        if (player == null || !player.isPlaying()) return;
+        if (isInPictureInPictureMode()) return;
+        try {
+            Rational ratio = new Rational(16, 9);
+            int w = playerView != null ? playerView.getWidth() : 0;
+            int h = playerView != null ? playerView.getHeight() : 0;
+            if (w > 0 && h > 0) ratio = new Rational(w, h);
+            PictureInPictureParams params = new PictureInPictureParams.Builder()
+                    .setAspectRatio(ratio).build();
+            enterPictureInPictureMode(params);
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "enter PiP failed: " + e.getMessage());
+        }
+    }
+
+    private void applyImmersive(boolean immersive) {
+        WindowInsetsControllerCompat ctl =
+                WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (ctl == null) return;
+        if (immersive) {
+            ctl.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            ctl.hide(WindowInsetsCompat.Type.systemBars());
+        } else {
+            ctl.show(WindowInsetsCompat.Type.systemBars());
+        }
+    }
+
+    private void pushServiceMetadata() {
+        if (boundService != null && currentFilePath != null) {
+            boundService.attachPlayer(player);
+        }
+        PlaybackService.requestUpdate(this,
+                currentFilePath != null ? new java.io.File(currentFilePath).getName() : null,
+                currentFilePath);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        
+
         // 保存播放位置，并检查是否已观看
         if (player != null && currentFilePath != null) {
             try {
                 long duration = player.getDuration();
                 if (duration > 0) {
                     long position = player.getCurrentPosition();
-                    
+
                     playHistoryManager.savePlayPosition(
                         currentFilePath,
                         position,
                         duration
                     );
-                    
+
                     // 检查并标记为已观看（播放超过80%自动标记）
                     watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
                 }
@@ -764,7 +874,13 @@ public class PlayerActivity extends AppCompatActivity {
                 android.util.Log.e(TAG, "Error saving play position: " + e.getMessage());
             }
         }
-        
+
+        // 停止前台服务（避免幽灵通知）
+        if (boundService != null) {
+            try { boundService.detachPlayer(); } catch (Exception ignored) {}
+        }
+        stopService(new Intent(this, PlaybackService.class));
+
         // 释放播放器资源
         releasePlayer();
     }

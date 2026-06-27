@@ -25,6 +25,7 @@ import java.util.Locale;
 public class SettingsActivity extends AppCompatActivity {
 
     private PendingDeleteManager pendingDeleteManager;
+    private PendingDeleteManager.OnFileDeletedListener pendingDeleteListener;
     private TextView pendingCountText;
     private LinearLayout storageInfoLayout;
 
@@ -37,7 +38,7 @@ public class SettingsActivity extends AppCompatActivity {
         storageInfoLayout = findViewById(R.id.storage_info_layout);
         
         // 设置监听器
-        pendingDeleteManager.setOnFileDeletedListener(new PendingDeleteManager.OnFileDeletedListener() {
+        pendingDeleteListener = new PendingDeleteManager.OnFileDeletedListener() {
             @Override
             public void onFileDeleted(String filePath, boolean success, String errorMessage) {
                 // 自动删除时显示提示
@@ -61,7 +62,8 @@ public class SettingsActivity extends AppCompatActivity {
                     updatePendingCountDisplay();
                 });
             }
-        });
+        };
+        pendingDeleteManager.addOnFileDeletedListener(pendingDeleteListener);
 
         // 返回按钮
         View backButton = findViewById(R.id.back_button);
@@ -209,8 +211,9 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         // 移除监听器
-        if (pendingDeleteManager != null) {
-            pendingDeleteManager.setOnFileDeletedListener(null);
+        if (pendingDeleteManager != null && pendingDeleteListener != null) {
+            pendingDeleteManager.removeOnFileDeletedListener(pendingDeleteListener);
+            pendingDeleteListener = null;
         }
     }
 }

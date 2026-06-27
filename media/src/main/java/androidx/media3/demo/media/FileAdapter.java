@@ -41,6 +41,11 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     private LruCache<String, Boolean> watchedCache = new LruCache<>(200);
     private LruCache<String, Boolean> pendingDeleteCache = new LruCache<>(200);
 
+    // 视频时长懒加载执行器（避免重复创建）
+    private final java.util.concurrent.ExecutorService durationExecutor =
+            java.util.concurrent.Executors.newFixedThreadPool(2);
+    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+
     public interface OnItemClickListener {
         void onItemClick(FileItem item);
     }
@@ -338,6 +343,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         private ImageView icon;
         private TextView fileName;
         private TextView fileInfo;
+        private TextView durationBadge;
         private CheckBox checkBox;
         private ImageView watchedIcon;
         private ImageView favoriteIcon;
@@ -348,6 +354,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             icon = itemView.findViewById(R.id.icon);
             fileName = itemView.findViewById(R.id.file_name);
             fileInfo = itemView.findViewById(R.id.file_info);
+            durationBadge = itemView.findViewById(R.id.duration_badge);
             checkBox = itemView.findViewById(R.id.checkbox);
             watchedIcon = itemView.findViewById(R.id.watched_icon);
             favoriteIcon = itemView.findViewById(R.id.favorite_icon);
@@ -395,20 +402,25 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             // 设置图标/缩略图
             if (item.isDirectory()) {
                 icon.setImageResource(android.R.drawable.ic_dialog_info);
+                if (durationBadge != null) durationBadge.setVisibility(View.GONE);
             } else {
                 switch (item.getFileType()) {
                     case VIDEO:
                         // 为视频加载缩略图（已优化，带缓存key）
                         ThumbnailLoader.loadThumbnail(context, item.getFile(), icon);
+                        bindDurationBadge(item);
                         break;
                     case AUDIO:
                         icon.setImageResource(android.R.drawable.ic_media_play);
+                        if (durationBadge != null) durationBadge.setVisibility(View.GONE);
                         break;
                     case DOCUMENT:
                         icon.setImageResource(android.R.drawable.ic_menu_info_details);
+                        if (durationBadge != null) durationBadge.setVisibility(View.GONE);
                         break;
                     default:
                         icon.setImageResource(android.R.drawable.ic_menu_gallery);
+                        if (durationBadge != null) durationBadge.setVisibility(View.GONE);
                         break;
                 }
             }
@@ -494,6 +506,41 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
                     checkBox.setVisibility(View.GONE);
                 }
             }
+        }
+
+        private void bindDurationBadge(FileItem item) {
+            if (durationBadge == null) return;
+            long cached = item.getDurationMs();
+            if (cached > 0) {
+                durationBadge.setVisibility(View.VISIBLE);
+                durationBadge.setText(FileItem.formatDuration(cached));
+                return;
+            }
+            if (cached == 0) {
+                // 之前探测过但读不到时长，不再显示
+                durationBadge.setVisibility(View.GONE);
+                return;
+            }
+            // 未探测：先隐藏，异步取
+            durationBadge.setVisibility(View.GONE);
+            final String path = item.getFile().getAbsolutePath();
+            final TextView target = durationBadge;
+            target.setTag(path);
+            durationExecutor.execute(() -> {
+                long d = 0L;
+                try {
+                    d = ThumbnailLoader.getVideoDuration(path);
+                } catch (Throwable ignored) {}
+                final long finalDuration = d;
+                item.setDurationMs(finalDuration > 0 ? finalDuration : 0);
+                mainHandler.post(() -> {
+                    // 防止 ViewHolder 复用错位
+                    if (path.equals(target.getTag()) && finalDuration > 0) {
+                        target.setText(FileItem.formatDuration(finalDuration));
+                        target.setVisibility(View.VISIBLE);
+                    }
+                });
+            });
         }
     }
 }

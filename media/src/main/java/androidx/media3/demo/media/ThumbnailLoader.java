@@ -81,8 +81,17 @@ public class ThumbnailLoader {
         try {
             retriever = new MediaMetadataRetriever();
             retriever.setDataSource(videoPath);
-            // 提取1秒处的帧
-            Bitmap bitmap = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            // 优先取视频中点（视觉上更具代表性，避免黑屏开场）；失败回退到 1 秒
+            long durationMs = 0L;
+            try {
+                String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                if (durationStr != null) durationMs = Long.parseLong(durationStr);
+            } catch (Exception ignored) {}
+            long targetUs = durationMs > 4000 ? (durationMs / 2) * 1000L : 1_000_000L;
+            Bitmap bitmap = retriever.getFrameAtTime(targetUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            if (bitmap == null) {
+                bitmap = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            }
             return bitmap;
         } catch (Exception e) {
             Log.e(TAG, "Failed to extract thumbnail: " + videoPath, e);

@@ -195,6 +195,9 @@ dependencies {
     // Media3 播放器核心库
     implementation project(modulePrefix + 'lib-exoplayer')
     implementation project(modulePrefix + 'lib-ui')
+
+    // 兼容版 MediaSession + MediaStyle 通知（用于锁屏 / 通知栏 / 蓝牙耳机控制）
+    implementation 'androidx.media:media:' + androidxMediaVersion
     
     // 生命周期组件（优化内存管理）
     implementation 'androidx.lifecycle:lifecycle-runtime:2.7.0'

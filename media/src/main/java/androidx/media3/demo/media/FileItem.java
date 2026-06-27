@@ -9,6 +9,8 @@ public class FileItem {
     private final long lastModified;
     private final boolean isDirectory;
     private final FileType fileType;
+    // 视频时长缓存（毫秒），<0 表示未探测过
+    private long durationMs = -1L;
 
     public enum FileType {
         VIDEO, AUDIO, DOCUMENT, OTHER
@@ -88,6 +90,20 @@ public class FileItem {
         } else {
             return String.format("%.2f GB", size / (1024.0 * 1024.0 * 1024.0));
         }
+    }
+
+    public long getDurationMs() { return durationMs; }
+    public void setDurationMs(long d) { this.durationMs = d; }
+
+    /** 把毫秒格式化为 mm:ss 或 h:mm:ss */
+    public static String formatDuration(long ms) {
+        if (ms <= 0) return "";
+        long total = ms / 1000;
+        long h = total / 3600;
+        long m = (total % 3600) / 60;
+        long s = total % 60;
+        if (h > 0) return String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s);
+        return String.format(java.util.Locale.US, "%d:%02d", m, s);
     }
 }
 
