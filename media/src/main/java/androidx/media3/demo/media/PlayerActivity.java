@@ -136,6 +136,12 @@ public class PlayerActivity extends AppCompatActivity {
                     favoriteButton.setOnClickListener(v -> toggleFavorite());
                 }
                 updateFavoriteButton();
+
+                // 字幕 / 音轨 / 倍速 入口
+                ImageButton trackButton = topControlsView.findViewById(R.id.track_button);
+                if (trackButton != null) {
+                    trackButton.setOnClickListener(v -> showTrackSheet());
+                }
             }
             
             // 获取底部的删除按钮（现在在底部控制栏中）
@@ -397,7 +403,15 @@ public class PlayerActivity extends AppCompatActivity {
             }, 1500);
         }
     }
-    
+
+    /** 弹出 字幕 / 音轨 / 倍速 选择面板。 */
+    private void showTrackSheet() {
+        if (player == null) return;
+        TrackBottomSheet sheet = new TrackBottomSheet();
+        sheet.attach(player);
+        sheet.show(getSupportFragmentManager(), "track_sheet");
+    }
+
     private void toggleFavorite() {
         if (currentFilePath == null) {
             return;
@@ -484,7 +498,7 @@ public class PlayerActivity extends AppCompatActivity {
         for (String filePath : fileList) {
             File file = new File(filePath);
             if (file.exists()) {
-                mediaItems.add(MediaItem.fromUri(Uri.fromFile(file)));
+                mediaItems.add(SubtitleAutoLoader.buildItem(file));
             }
         }
 
@@ -659,7 +673,7 @@ public class PlayerActivity extends AppCompatActivity {
         for (String filePath : newVideos) {
             java.io.File file = new java.io.File(filePath);
             if (file.exists()) {
-                newMediaItems.add(MediaItem.fromUri(Uri.fromFile(file)));
+                newMediaItems.add(SubtitleAutoLoader.buildItem(file));
             }
         }
         
@@ -692,7 +706,7 @@ public class PlayerActivity extends AppCompatActivity {
             for (String filePath : fileList) {
                 File file = new File(filePath);
                 if (file.exists()) {
-                    mediaItems.add(MediaItem.fromUri(Uri.fromFile(file)));
+                    mediaItems.add(SubtitleAutoLoader.buildItem(file));
                 }
             }
             

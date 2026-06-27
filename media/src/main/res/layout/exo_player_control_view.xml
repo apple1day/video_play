@@ -41,6 +41,18 @@
             android:scaleType="fitCenter"
             android:contentDescription="@string/favorite" />
 
+        <!-- 字幕 / 音轨 / 倍速 入口 -->
+        <ImageButton
+            android:id="@+id/track_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:src="@android:drawable/ic_menu_sort_by_size"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:tint="#FFFFFF"
+            android:contentDescription="字幕 / 音轨 / 倍速" />
+
     </LinearLayout>
 
     <!-- 底部控制栏（包含删除按钮、播放按钮、进度条、上一个、下一个） -->
