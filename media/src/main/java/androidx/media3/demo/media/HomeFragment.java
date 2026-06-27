@@ -83,6 +83,7 @@ public class HomeFragment extends Fragment {
     private PendingDeleteManager pendingDeleteManager;
     private PendingDeleteManager.OnFileDeletedListener pendingDeleteListener;
     private FileListCacheManager cacheManager;
+    private androidx.media3.demo.media.viewmodel.VideoListViewModel videoListViewModel;
     
     // 分页相关
     private static final int PAGE_SIZE = 100; // 每页加载100个
@@ -796,149 +797,72 @@ public class HomeFragment extends Fragment {
     }
 
     private void loadFiles() {
-        loadFiles(false); // 默认使用缓存
+        loadFiles(false);
     }
 
+    /**
+     * 加载视频列表。已经搬到 {@link androidx.media3.demo.media.viewmodel.VideoListViewModel}：
+     * Fragment 只需要喊一声"我要扫描"，剩下的扫描线程、增量回调、磁盘缓存命中、状态切换
+     * 全由 ViewModel + VideoRepository 处理。Fragment 通过 LiveData 订阅结果，
+     * 旋转屏 / 切 Tab 也不会重复扫盘。
+     */
     private void loadFiles(boolean forceRefresh) {
         // 重置分页状态
         currentPage = 0;
         hasMoreData = true;
         displayedFiles.clear();
-        
-        // 如果不是强制刷新，先尝试从缓存加载
-        if (!forceRefresh) {
-            List<FileItem> cachedFiles = cacheManager.loadFileList(isInternalStorage);
-            if (cachedFiles != null && !cachedFiles.isEmpty()) {
-                Log.d(TAG, "使用缓存数据: " + cachedFiles.size() + " 个文件");
-                
-                // 在后台线程处理数据
-                new Thread(() -> {
-                    List<FileItem> videos = new ArrayList<>();
-                    for (FileItem item : cachedFiles) {
-                        if (item.getFileType() == FileItem.FileType.VIDEO) {
-                            videos.add(item);
-                        }
+
+        if (videoListViewModel == null) {
+            videoListViewModel = new androidx.lifecycle.ViewModelProvider(this)
+                    .get(androidx.media3.demo.media.viewmodel.VideoListViewModel.class);
+            observeVideoListViewModel();
+        }
+        videoListViewModel.loadVideos(currentFilter, forceRefresh);
+    }
+
+    /** ViewModel LiveData → UI 绑定。仅在第一次 loadFiles 时挂载。 */
+    private void observeVideoListViewModel() {
+        videoListViewModel.phase.observe(getViewLifecycleOwner(), phase -> {
+            if (phase == null) return;
+            switch (phase) {
+                case SCANNING:
+                    if (loadingView != null) {
+                        loadingView.setVisibility(View.VISIBLE);
+                        emptyView.setVisibility(View.GONE);
+                        recyclerView.setVisibility(View.VISIBLE);
                     }
-                    // 对视频列表按时间排序
-                    Collections.sort(videos, (o1, o2) -> Long.compare(o2.getLastModified(), o1.getLastModified()));
-                    
-                    // 回到主线程更新UI
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        allVideoFiles = videos;
-                        allFiles = cachedFiles;
-                        applyFilterAndSort(); // 这会触发第一页加载
-                        
-                        // 隐藏加载提示
-                        if (loadingView != null) {
-                            loadingView.setVisibility(View.GONE);
-                        }
-                        
-                        // 停止刷新动画
-                        if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
-                            swipeRefreshLayout.setRefreshing(false);
-                        }
-                    });
-                }).start();
-                
-                return;
+                    break;
+                case COMPLETED:
+                    if (loadingView != null) loadingView.setVisibility(View.GONE);
+                    if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
+                        swipeRefreshLayout.setRefreshing(false);
+                    }
+                    break;
+                default:
+                    break;
             }
-        }
-        
-        // 缓存无效或强制刷新，显示加载提示
-        if (loadingView != null) {
-            loadingView.setVisibility(View.VISIBLE);
-            emptyView.setVisibility(View.GONE);
-            recyclerView.setVisibility(View.VISIBLE); // 立即显示RecyclerView，准备增量显示
-        }
-        
-        new Thread(() -> {
-            List<File> targetDirectories = new ArrayList<>();
+        });
 
-            // 主页统一扫描所有存储设备（内部 + 所有外接）。
-            // 之前按"内部/外部"切换的逻辑已迁移到"文件夹"Tab，主页不再做存储筛选。
-            File primaryStorage = Environment.getExternalStorageDirectory();
-            if (primaryStorage != null && primaryStorage.exists()) {
-                targetDirectories.add(primaryStorage);
+        videoListViewModel.incrementalBatch.observe(getViewLifecycleOwner(), batch -> {
+            if (batch == null || batch.isEmpty()) return;
+            // 增量阶段只更新加载提示，不触发排序刷新
+            if (loadingView != null && loadingTextView != null) {
+                int found = videoListViewModel.allVideos.getValue() != null
+                        ? videoListViewModel.allVideos.getValue().size() : 0;
+                loadingTextView.setText("正在加载视频... 已找到 " + (found + batch.size()) + " 个");
             }
-            for (File dir : storageDirectories) {
-                if (dir != null && dir.exists() && !targetDirectories.contains(dir)) {
-                    targetDirectories.add(dir);
-                }
-            }
+        });
 
-            // 如果一个都没找到（极少见，权限/未挂载），fall back 到原列表避免崩
-            if (targetDirectories.isEmpty()) {
-                targetDirectories = storageDirectories;
-            }
+        videoListViewModel.allFiles.observe(getViewLifecycleOwner(), files -> {
+            if (files == null) return;
+            allFiles = new ArrayList<>(files);
+        });
 
-            Log.d(TAG, "扫描目录: " + targetDirectories.size() + " 个（全部存储设备）");
-            
-            // 使用异步增量加载，边扫描边显示
-            final List<FileItem> allScannedFiles = new ArrayList<>();
-            final List<FileItem> allScannedVideos = new ArrayList<>();
-            
-            FileUtils.scanAllFilesAsync(targetDirectories, currentFilter, new FileUtils.ScanCallback() {
-                @Override
-                public void onBatchLoaded(List<FileItem> batch) {
-                    // 优化：减少UI更新频率，仅更新计数不立即排序
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        synchronized (allScannedFiles) {
-                            allScannedFiles.addAll(batch);
-                            
-                            // 提取视频文件
-                            for (FileItem item : batch) {
-                                if (item.getFileType() == FileItem.FileType.VIDEO) {
-                                    allScannedVideos.add(item);
-                                }
-                            }
-                            
-                            // 优化：仅更新加载提示文本，不触发排序和UI刷新
-                            if (loadingView != null) {
-                                if (loadingTextView != null) loadingTextView.setText("正在加载视频... 已找到 " + allScannedVideos.size() + " 个");
-                            }
-                            
-                            Log.d(TAG, "已加载 " + allScannedFiles.size() + " 个文件（增量更新）");
-                        }
-                    });
-                }
-                
-                @Override
-                public void onScanComplete(List<FileItem> allFiles) {
-                    // 所有文件扫描完成
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        // 对视频列表按时间排序（用于播放顺序）
-                        Collections.sort(allScannedVideos, (o1, o2) -> 
-                            Long.compare(o2.getLastModified(), o1.getLastModified()));
-                        
-                        allVideoFiles = new ArrayList<>(allScannedVideos);
-                        HomeFragment.this.allFiles = new ArrayList<>(allScannedFiles);
-                        
-                        // 保存到缓存
-                        cacheManager.saveFileList(allScannedFiles, isInternalStorage);
-                        
-                        // 最后一次排序和过滤
-                        applyFilterAndSort();
-                        
-                        // 隐藏加载提示
-                        if (loadingView != null) {
-                            loadingView.setVisibility(View.GONE);
-                        }
-                        
-                        // 停止刷新动画
-                        if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
-                            swipeRefreshLayout.setRefreshing(false);
-                        }
-                        
-                        String storageType = isInternalStorage ? "内部存储" : "外部存储";
-                        Toast.makeText(getContext(), storageType + ": 已加载 " + allScannedFiles.size() + " 个文件", 
-                            Toast.LENGTH_SHORT).show();
-                        
-                        Log.d(TAG, "扫描完成: 总共 " + allScannedFiles.size() + " 个文件，" + 
-                            allScannedVideos.size() + " 个视频");
-                    });
-                }
-            });
-        }).start();
+        videoListViewModel.allVideos.observe(getViewLifecycleOwner(), videos -> {
+            if (videos == null) return;
+            allVideoFiles = new ArrayList<>(videos);
+            applyFilterAndSort();
+        });
     }
 
     private void applyFilterAndSort() {
