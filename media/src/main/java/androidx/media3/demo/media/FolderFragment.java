@@ -7,7 +7,10 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -19,6 +22,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,8 +42,14 @@ public class FolderFragment extends Fragment {
     private TextView emptyView;
     private SwipeRefreshLayout swipeRefresh;
     private Button refreshButton;
+    private Spinner storageSpinner;
     private FolderAdapter adapter;
     private List<FolderItem> folders = new ArrayList<>();
+
+    // 存储设备列表 & 当前筛选
+    private List<File> storageDirectories = new ArrayList<>();
+    // null = 全部；否则只显示该存储设备下的文件夹
+    @Nullable private File currentStorageFilter = null;
 
     @Nullable
     @Override
@@ -52,10 +62,12 @@ public class FolderFragment extends Fragment {
         emptyView = view.findViewById(R.id.empty_view);
         swipeRefresh = view.findViewById(R.id.swipe_refresh);
         refreshButton = view.findViewById(R.id.refresh_button);
+        storageSpinner = view.findViewById(R.id.storage_spinner);
 
         setupRecyclerView();
         setupSwipeRefresh();
         setupRefreshButton();
+        setupStorageSpinner();
 
         // 加载文件夹
         loadFolders();
@@ -84,6 +96,58 @@ public class FolderFragment extends Fragment {
     }
 
     /**
+     * 初始化存储设备下拉框：列出"全部 / 内部存储 / 外部存储(每个独立列出)"。
+     * 选项 0 始终是"全部"。
+     */
+    private void setupStorageSpinner() {
+        if (storageSpinner == null) return;
+        new Thread(() -> {
+            final List<File> dirs = FileUtils.getStorageDirectories(getContext());
+            if (getActivity() == null) return;
+            getActivity().runOnUiThread(() -> {
+                storageDirectories = dirs;
+                File primary = Environment.getExternalStorageDirectory();
+                List<String> labels = new ArrayList<>();
+                final List<File> filterRefs = new ArrayList<>(); // 与 labels 一一对应，null=全部
+                labels.add(getString(R.string.storage_all_or_fallback_all));
+                filterRefs.add(null);
+                for (File dir : dirs) {
+                    if (dir == null || !dir.exists()) continue;
+                    String label;
+                    if (dir.equals(primary)) {
+                        label = getString(R.string.storage_internal);
+                    } else {
+                        // 用挂载点最后一段当 U盘/SD卡 显示名（例如 /storage/XXXX-YYYY -> XXXX-YYYY）
+                        String tail = dir.getName();
+                        label = getString(R.string.storage_external) + (tail.isEmpty() ? "" : " · " + tail);
+                    }
+                    labels.add(label);
+                    filterRefs.add(dir);
+                }
+
+                ArrayAdapter<String> a = new ArrayAdapter<>(getContext(),
+                        android.R.layout.simple_spinner_item, labels);
+                a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                storageSpinner.setAdapter(a);
+
+                storageSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                        File newFilter = position >= 0 && position < filterRefs.size()
+                                ? filterRefs.get(position) : null;
+                        if (!java.util.Objects.equals(newFilter, currentStorageFilter)) {
+                            currentStorageFilter = newFilter;
+                            Log.d(TAG, "切换存储筛选: " + (newFilter == null ? "全部" : newFilter.getAbsolutePath()));
+                            loadFolders();
+                        }
+                    }
+                    @Override public void onNothingSelected(AdapterView<?> parent) { }
+                });
+            });
+        }).start();
+    }
+
+    /**
      * 加载文件夹列表
      */
     private void loadFolders() {
@@ -93,12 +157,17 @@ public class FolderFragment extends Fragment {
         new Thread(() -> {
             Map<String, FolderItem> folderMap = new HashMap<>();
 
-            // 获取所有存储目录（包括内部存储和外部存储）
-            List<File> storageDirectories = FileUtils.getStorageDirectories(getContext());
-            Log.d(TAG, "找到 " + storageDirectories.size() + " 个存储设备");
-            
-            // 扫描所有存储目录
-            for (File storageDir : storageDirectories) {
+            // 根据用户选择决定扫描范围
+            List<File> scanTargets;
+            if (currentStorageFilter != null) {
+                scanTargets = Arrays.asList(currentStorageFilter);
+            } else {
+                scanTargets = FileUtils.getStorageDirectories(getContext());
+            }
+            Log.d(TAG, "扫描 " + scanTargets.size() + " 个存储设备，filter="
+                    + (currentStorageFilter == null ? "全部" : currentStorageFilter.getAbsolutePath()));
+
+            for (File storageDir : scanTargets) {
                 if (storageDir != null && storageDir.exists()) {
                     Log.d(TAG, "扫描存储设备: " + storageDir.getAbsolutePath());
                     scanDirectory(storageDir, folderMap);

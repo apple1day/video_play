@@ -35,12 +35,13 @@
                 android:textColor="#1A1A1A"
                 android:letterSpacing="0.01" />
 
-            <!-- 存储切换按钮（紧凑下拉框）-->
+            <!-- 存储切换按钮（已隐藏：主页现在统一扫描所有存储设备；存储切换迁移到"文件夹"Tab） -->
             <Spinner
                 android:id="@+id/storage_spinner"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:minWidth="80dp"
+                android:visibility="gone"
                 android:background="@drawable/spinner_bg_modern" />
 
         </LinearLayout>

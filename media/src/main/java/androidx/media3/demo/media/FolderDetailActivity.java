@@ -247,30 +247,42 @@ public class FolderDetailActivity extends AppCompatActivity {
     }
 
     /**
-     * 播放视频
+     * 播放视频。
+     * 重要：构建的播放列表 = 当前文件夹的视频，**按用户当前排序**展开（与列表显示一致）。
+     * 这样从某个视频开始播，会顺着用户看到的顺序自动连播。
      */
     private void playVideo(FileItem item) {
-        // 构建视频列表
+        // 按当前排序后的 videos 顺序构建播放列表（仅保留仍然存在的文件，避免 ExoPlayer 报错）
         ArrayList<String> fileList = new ArrayList<>();
+        int currentIndex = 0;
+        String targetPath = item.getFile().getAbsolutePath();
+
         for (FileItem video : videos) {
-            fileList.add(video.getFile().getAbsolutePath());
+            File f = video.getFile();
+            if (f == null || !f.exists()) continue;
+            String path = f.getAbsolutePath();
+            if (path.equals(targetPath)) {
+                currentIndex = fileList.size(); // 在过滤后列表里的真实索引
+            }
+            fileList.add(path);
         }
 
-        // 找到当前视频的索引
-        int currentIndex = 0;
-        for (int i = 0; i < videos.size(); i++) {
-            if (videos.get(i).getFile().getAbsolutePath()
-                    .equals(item.getFile().getAbsolutePath())) {
-                currentIndex = i;
-                break;
-            }
+        if (fileList.isEmpty()) {
+            Toast.makeText(this, "当前文件夹没有可播放的视频", Toast.LENGTH_SHORT).show();
+            return;
         }
+
+        Log.d(TAG, "构建文件夹播放列表: 总数=" + fileList.size() + ", 起始索引=" + currentIndex
+                + ", 排序=" + (sortByTime ? "时间" : "大小"));
 
         // 启动播放器
         Intent intent = new Intent(this, PlayerActivity.class);
-        intent.putExtra("file_path", item.getFile().getAbsolutePath());
+        intent.putExtra("file_path", targetPath);
         intent.putStringArrayListExtra("file_list", fileList);
         intent.putExtra("current_index", currentIndex);
+        // 标记此播放列表来自"文件夹详情"，PlayerActivity 不应触发 HomeFragment 的"加载更多"逻辑
+        intent.putExtra("from_folder", true);
+        intent.putExtra("folder_path", folderPath);
         startActivity(intent);
     }
     

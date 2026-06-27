@@ -56,6 +56,7 @@
     <string name="storage_internal">内部存储</string>
     <string name="storage_external">外部存储</string>
     <string name="storage_label">存储:</string>
+    <string name="storage_all_or_fallback_all">全部存储</string>
     <string name="file_browser">小熊播放器</string>
     <string name="browse_all_videos">📂 浏览手机所有视频</string>
     <string name="all_videos">全部视频</string>

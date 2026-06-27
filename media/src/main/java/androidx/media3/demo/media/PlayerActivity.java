@@ -70,11 +70,13 @@ public class PlayerActivity extends AppCompatActivity {
     // 画中画 / 后台播放
     private boolean inPipMode = false;
     private boolean userLeaving = false;
+    // 当播放列表来自"文件夹详情"时为 true，禁用 HomeFragment 的"加载更多"扩列表
+    private boolean fromFolderPlaylist = false;
     @androidx.annotation.Nullable private PlaybackService boundService;
     private final ServiceConnection serviceConn = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
             if (service instanceof PlaybackService.LocalBinder) {
-                boundService = ((PlaybackService.LocalBinder) service).service;
+                boundService = ((PlaybackService.LocalBinder) service).getService();
                 if (player != null) boundService.attachPlayer(player);
                 pushServiceMetadata();
             }
@@ -104,6 +106,9 @@ public class PlayerActivity extends AppCompatActivity {
         currentFilePath = intent.getStringExtra("file_path");
         fileList = intent.getStringArrayListExtra("file_list");
         currentIndex = intent.getIntExtra("current_index", 0);
+        // 是否来自"文件夹详情" —— 若是，播放列表必须严格保持文件夹内顺序，
+        // 不能让 HomeFragment 的"上拉加载更多"回调把别处的视频拼到这里。
+        fromFolderPlaylist = intent.getBooleanExtra("from_folder", false);
 
         if (fileList == null) {
             fileList = new ArrayList<>();
@@ -601,6 +606,10 @@ public class PlayerActivity extends AppCompatActivity {
      */
     private void checkAndRequestMoreVideos() {
         if (fileList == null || currentIndex < 0) {
+            return;
+        }
+        // 文件夹播放列表必须严格保持文件夹内的顺序与内容，不允许从 Home 主页"加载更多"扩列表。
+        if (fromFolderPlaylist) {
             return;
         }
         

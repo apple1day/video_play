@@ -25,6 +25,15 @@
             android:paddingStart="8dp"
             android:paddingEnd="8dp" />
 
+        <!-- 存储设备选择（从主页迁移过来） -->
+        <Spinner
+            android:id="@+id/storage_spinner"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:minWidth="96dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/spinner_bg_modern" />
+
         <Button
             android:id="@+id/refresh_button"
             android:layout_width="wrap_content"

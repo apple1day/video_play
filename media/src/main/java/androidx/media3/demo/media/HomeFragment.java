@@ -103,7 +103,7 @@ public class HomeFragment extends Fragment {
     
     // 存储相关
     private List<File> storageDirectories = new ArrayList<>();
-    private boolean isInternalStorage = true; // true=内部存储, false=外部存储
+    private boolean isInternalStorage = true; // 保留字段以兼容旧缓存接口；主页扫描已改为"全部存储"
     private boolean hasExternalStorage = false; // 是否有外部存储
 
     private enum SortType {
@@ -313,11 +313,14 @@ public class HomeFragment extends Fragment {
     }
     
     private void setupStorageSpinner() {
-        // 检查存储设备
+        // 主页存储切换已废弃：现在默认扫描所有存储设备（内部 + 外部）。
+        // 真正的存储选择交给"文件夹"Tab 处理。
+        if (storageSpinner != null) {
+            storageSpinner.setVisibility(View.GONE);
+        }
+        // 仍然在后台探测一次存储设备，供 loadFiles 使用
         new Thread(() -> {
             storageDirectories = FileUtils.getStorageDirectories(getContext());
-            
-            // 判断是否有外部存储（非主存储的设备）
             File primaryStorage = Environment.getExternalStorageDirectory();
             hasExternalStorage = false;
             for (File dir : storageDirectories) {
@@ -327,44 +330,7 @@ public class HomeFragment extends Fragment {
                     break;
                 }
             }
-            
             Log.d(TAG, "存储设备数量: " + storageDirectories.size() + ", 有外部存储: " + hasExternalStorage);
-            
-            new Handler(Looper.getMainLooper()).post(() -> {
-                List<String> storageOptions = new ArrayList<>();
-                storageOptions.add(getString(R.string.storage_internal));
-                
-                if (hasExternalStorage) {
-                    storageOptions.add(getString(R.string.storage_external));
-                }
-                
-                ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                    getContext(),
-                    android.R.layout.simple_spinner_item,
-                    storageOptions
-                );
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-                storageSpinner.setAdapter(adapter);
-                
-                // 设置选择监听器
-                storageSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-                    @Override
-                    public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                        boolean newStorageType = (position == 0);
-                        // 只有当存储类型真正改变时才重新加载
-                        if (newStorageType != isInternalStorage) {
-                            isInternalStorage = newStorageType;
-                            Log.d(TAG, "切换存储类型: " + (isInternalStorage ? "内部存储" : "外部存储"));
-                            loadFiles(false); // 使用缓存
-                        }
-                    }
-                    
-                    @Override
-                    public void onNothingSelected(AdapterView<?> parent) {
-                        // 不做处理
-                    }
-                });
-            });
         }).start();
     }
     
@@ -887,31 +853,25 @@ public class HomeFragment extends Fragment {
         
         new Thread(() -> {
             List<File> targetDirectories = new ArrayList<>();
-            
-            // 根据选择的存储类型筛选目录
-            // 修复：使用 Environment.getExternalStorageDirectory() 作为主存储判断依据
+
+            // 主页统一扫描所有存储设备（内部 + 所有外接）。
+            // 之前按"内部/外部"切换的逻辑已迁移到"文件夹"Tab，主页不再做存储筛选。
             File primaryStorage = Environment.getExternalStorageDirectory();
-            
-            if (isInternalStorage) {
-                // 内部存储（手机本机存储）
-                if (primaryStorage != null && primaryStorage.exists()) {
-                    targetDirectories.add(primaryStorage);
-                }
-            } else {
-                // 外部存储（所有非主存储的目录，如U盘、SD卡）
-                for (File dir : storageDirectories) {
-                    if (!dir.equals(primaryStorage) && dir.exists()) {
-                        targetDirectories.add(dir);
-                    }
+            if (primaryStorage != null && primaryStorage.exists()) {
+                targetDirectories.add(primaryStorage);
+            }
+            for (File dir : storageDirectories) {
+                if (dir != null && dir.exists() && !targetDirectories.contains(dir)) {
+                    targetDirectories.add(dir);
                 }
             }
-            
-            // 如果没有找到目标目录，使用所有目录
+
+            // 如果一个都没找到（极少见，权限/未挂载），fall back 到原列表避免崩
             if (targetDirectories.isEmpty()) {
                 targetDirectories = storageDirectories;
             }
-            
-            Log.d(TAG, "扫描目录: " + targetDirectories.size() + " 个, 类型: " + (isInternalStorage ? "内部存储" : "外部存储"));
+
+            Log.d(TAG, "扫描目录: " + targetDirectories.size() + " 个（全部存储设备）");
             
             // 使用异步增量加载，边扫描边显示
             final List<FileItem> allScannedFiles = new ArrayList<>();

@@ -254,11 +254,17 @@ public class PlaybackService extends Service {
         super.onDestroy();
     }
 
-    @Nullable @Override public IBinder onBind(Intent intent) { return new LocalBinder(this); }
+    @Nullable @Override public IBinder onBind(Intent intent) { return new LocalBinder(); }
 
-    public static class LocalBinder extends android.os.Binder {
-        public final PlaybackService service;
-        LocalBinder(PlaybackService s) { this.service = s; }
+    /**
+     * 内部 Binder：通过方法把 service 实例暴露出去，
+     * 比直接暴露 `public final PlaybackService service` 字段更安全，
+     * 也能规避同名包路径下 IDE 报 "Cannot access ..." 的解析问题。
+     */
+    public class LocalBinder extends android.os.Binder {
+        public PlaybackService getService() {
+            return PlaybackService.this;
+        }
     }
 
     /** 让外部静态触发通知刷新的便捷方法。 */
