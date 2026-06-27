@@ -214,6 +214,10 @@ dependencies {
     // Glide 图片加载（视频缩略图）
     implementation 'com.github.bumptech.glide:glide:4.16.0'
     annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
+
+    // Room 数据库（替代 4 个 SharedPreferences 单例：收藏/已观看/播放历史/待删除）
+    implementation 'androidx.room:room-runtime:' + roomVersion
+    annotationProcessor 'androidx.room:room-compiler:' + roomVersion
     
     // 内存泄漏检测（仅Debug）
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.12'

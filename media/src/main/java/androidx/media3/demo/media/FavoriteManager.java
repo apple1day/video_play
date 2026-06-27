@@ -3,54 +3,58 @@ package androidx.media3.demo.media;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import androidx.media3.demo.media.data.AppDatabase;
+import androidx.media3.demo.media.data.FavoriteDao;
+import androidx.media3.demo.media.data.FavoriteEntity;
+
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * 收藏管理器 - 使用 SharedPreferences 存储收藏的视频
+ * 收藏管理器。
+ *
+ * 数据存储已从 SharedPreferences 迁移到 Room（表：favorites）。
+ * 对外 API 与旧版本完全兼容，所以调用方无需修改。
+ *
+ * 首次启动会把旧的 SP 数据自动迁移到 Room（只迁一次，迁完留下标记位）。
  */
 public class FavoriteManager {
-    
-    private static final String PREF_NAME = "favorites";
-    private static final String KEY_FAVORITE_FILES = "favorite_files";
-    
+
+    private static final String LEGACY_PREF = "favorites";
+    private static final String LEGACY_KEY = "favorite_files";
+    private static final String MIGRATE_PREF = "anxiong_migrate";
+    private static final String MIGRATE_FLAG = "favorites_migrated_v1";
+
     private static FavoriteManager instance;
-    private SharedPreferences preferences;
-    
-    private FavoriteManager(Context context) {
-        preferences = context.getApplicationContext()
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+
+    private final FavoriteDao dao;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+
+    private FavoriteManager(Context ctx) {
+        this.dao = AppDatabase.get(ctx).favoriteDao();
+        migrateFromSharedPrefsIfNeeded(ctx);
     }
-    
+
     public static synchronized FavoriteManager getInstance(Context context) {
         if (instance == null) {
-            instance = new FavoriteManager(context);
+            instance = new FavoriteManager(context.getApplicationContext());
         }
         return instance;
     }
-    
-    /**
-     * 添加收藏
-     */
+
     public void addFavorite(String filePath) {
-        Set<String> favorites = getFavorites();
-        favorites.add(filePath);
-        saveFavorites(favorites);
+        if (filePath == null) return;
+        dao.upsert(new FavoriteEntity(filePath, System.currentTimeMillis()));
     }
-    
-    /**
-     * 移除收藏
-     */
+
     public void removeFavorite(String filePath) {
-        Set<String> favorites = getFavorites();
-        favorites.remove(filePath);
-        saveFavorites(favorites);
+        if (filePath == null) return;
+        dao.deleteByPath(filePath);
     }
-    
-    /**
-     * 切换收藏状态
-     * @return 切换后的状态：true = 已收藏，false = 未收藏
-     */
+
     public boolean toggleFavorite(String filePath) {
         if (isFavorite(filePath)) {
             removeFavorite(filePath);
@@ -60,36 +64,32 @@ public class FavoriteManager {
             return true;
         }
     }
-    
-    /**
-     * 检查是否已收藏
-     */
+
     public boolean isFavorite(String filePath) {
-        return getFavorites().contains(filePath);
+        if (filePath == null) return false;
+        return dao.countByPath(filePath) > 0;
     }
-    
-    /**
-     * 获取所有收藏
-     */
+
     public Set<String> getFavorites() {
-        return new HashSet<>(preferences.getStringSet(KEY_FAVORITE_FILES, new HashSet<>()));
+        return new HashSet<>(dao.listAllPaths());
     }
-    
-    /**
-     * 保存收藏列表
-     */
-    private void saveFavorites(Set<String> favorites) {
-        preferences.edit()
-            .putStringSet(KEY_FAVORITE_FILES, favorites)
-            .apply();
-    }
-    
-    /**
-     * 清空所有收藏
-     */
+
     public void clearAllFavorites() {
-        preferences.edit()
-            .remove(KEY_FAVORITE_FILES)
-            .apply();
+        io.execute(dao::clear);
+    }
+
+    /** 一次性把旧的 SP 数据迁到 Room，迁完写入标记位。 */
+    private void migrateFromSharedPrefsIfNeeded(Context ctx) {
+        SharedPreferences flag = ctx.getSharedPreferences(MIGRATE_PREF, Context.MODE_PRIVATE);
+        if (flag.getBoolean(MIGRATE_FLAG, false)) return;
+        SharedPreferences legacy = ctx.getSharedPreferences(LEGACY_PREF, Context.MODE_PRIVATE);
+        Set<String> old = legacy.getStringSet(LEGACY_KEY, null);
+        if (old != null && !old.isEmpty()) {
+            long now = System.currentTimeMillis();
+            for (String path : old) {
+                if (path != null) dao.upsert(new FavoriteEntity(path, now));
+            }
+        }
+        flag.edit().putBoolean(MIGRATE_FLAG, true).apply();
     }
 }

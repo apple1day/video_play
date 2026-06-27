@@ -12,6 +12,10 @@ import android.util.Log;
 import android.view.Gravity;
 import android.widget.Toast;
 
+import androidx.media3.demo.media.data.AppDatabase;
+import androidx.media3.demo.media.data.PendingDeleteDao;
+import androidx.media3.demo.media.data.PendingDeleteEntity;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -22,23 +26,31 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 管理待删除的视频文件
+ * 管理待删除的视频文件。
+ *
+ * 存储已迁移到 Room（表：pending_delete，按 markedAt 升序对应原 LinkedHashSet 顺序）。
+ * "最大数量"配置（max_pending_count）继续保留在 SharedPreferences 里，因为它是单个 int 值，
+ * 没必要为它建一张表。
  */
 public class PendingDeleteManager {
     private static final String TAG = "PendingDeleteManager";
+    // 仅用于存放"最大数量"配置 + 一次性迁移标记
     private static final String PREFS_NAME = "pending_deletes";
-    private static final String KEY_PENDING_FILES = "pending_delete_files";
+    private static final String LEGACY_KEY = "pending_delete_files";
     private static final String KEY_MAX_COUNT = "max_pending_count";
+    private static final String MIGRATE_PREF = "anxiong_migrate";
+    private static final String MIGRATE_FLAG = "pending_delete_migrated_v1";
     private static final int DEFAULT_MAX_COUNT = 5;
-    
+
     private static PendingDeleteManager instance;
-    private SharedPreferences prefs;
-    private Context context;
-    private ExecutorService deleteExecutor;
-    private Handler mainHandler;
+    private final SharedPreferences prefs;
+    private final Context context;
+    private final ExecutorService deleteExecutor;
+    private final Handler mainHandler;
+    private final PendingDeleteDao dao;
     // 使用线程安全列表支持多个监听器，避免单例下相互覆盖
     private final CopyOnWriteArrayList<OnFileDeletedListener> listeners = new CopyOnWriteArrayList<>();
-    
+
     /**
      * 文件删除监听器
      */
@@ -46,76 +58,62 @@ public class PendingDeleteManager {
         void onFileDeleted(String filePath, boolean success, String errorMessage);
         void onFilesDeleted(int successCount, int failCount, List<String> failedFiles);
     }
-    
+
     private PendingDeleteManager(Context context) {
         this.context = context.getApplicationContext();
         this.prefs = this.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         this.deleteExecutor = Executors.newSingleThreadExecutor();
         this.mainHandler = new Handler(Looper.getMainLooper());
+        this.dao = AppDatabase.get(this.context).pendingDeleteDao();
+        migrateFromSharedPrefsIfNeeded();
     }
-    
+
     public static synchronized PendingDeleteManager getInstance(Context context) {
         if (instance == null) {
             instance = new PendingDeleteManager(context);
         }
         return instance;
     }
-    
-    /**
-     * 添加文件删除监听器（支持多个）
-     */
+
     public void addOnFileDeletedListener(OnFileDeletedListener listener) {
         if (listener != null && !listeners.contains(listener)) {
             listeners.add(listener);
         }
     }
-    
-    /**
-     * 移除文件删除监听器
-     */
+
     public void removeOnFileDeletedListener(OnFileDeletedListener listener) {
         listeners.remove(listener);
     }
-    
-    /**
-     * 检查文件是否在待删除列表中
-     */
+
     public boolean isPendingDelete(String filePath) {
-        Set<String> pendingFiles = getPendingFiles();
-        return pendingFiles.contains(filePath);
+        return filePath != null && dao.countByPath(filePath) > 0;
     }
-    
-    /**
-     * 添加文件到待删除列表
-     * 如果超过最大数量，会自动删除最早添加的文件
-     */
+
     public void addPendingDelete(String filePath) {
+        if (filePath == null) return;
         LinkedHashSet<String> pendingFiles = new LinkedHashSet<>(getPendingFiles());
-        
+
         if (!pendingFiles.contains(filePath)) {
             pendingFiles.add(filePath);
-            
+
             // 检查是否超过最大数量
             int maxCount = getMaxPendingCount();
             while (pendingFiles.size() > maxCount && !pendingFiles.isEmpty()) {
                 // 删除最早添加的文件（同步删除）
                 String firstFile = pendingFiles.iterator().next();
-                
+
                 // 立即删除文件
                 DeleteResult result = deleteFileSync(firstFile);
-                Log.d(TAG, "addPendingDelete: 超过最大数量，删除文件 " + new File(firstFile).getName() 
+                Log.d(TAG, "addPendingDelete: 超过最大数量，删除文件 " + new File(firstFile).getName()
                     + ", 结果: " + result.success + ", 原因: " + result.errorMessage);
-                
-                // 只有删除成功才从待删除列表中移除
+
                 if (result.success) {
                     pendingFiles.remove(firstFile);
                 } else {
-                    // 删除失败，保留待删除标记，但需要跳出循环避免死循环
                     Log.w(TAG, "addPendingDelete: 删除失败，保留待删除标记 - " + new File(firstFile).getName());
                     break;
                 }
-                
-                // 通知监听器
+
                 if (!listeners.isEmpty()) {
                     final String file = firstFile;
                     final boolean success = result.success;
@@ -126,29 +124,20 @@ public class PendingDeleteManager {
                         }
                     });
                 }
-                
-                // 显示删除结果
+
                 showDeleteResult(firstFile, result);
             }
-            
+
             savePendingFiles(pendingFiles);
             Log.d(TAG, "addPendingDelete: 当前待删除数量 = " + pendingFiles.size());
         }
     }
-    
-    /**
-     * 从待删除列表中移除文件
-     */
+
     public void removePendingDelete(String filePath) {
-        Set<String> pendingFiles = getPendingFiles();
-        if (pendingFiles.remove(filePath)) {
-            savePendingFiles(pendingFiles);
-        }
+        if (filePath == null) return;
+        dao.deleteByPath(filePath);
     }
-    
-    /**
-     * 切换待删除状态
-     */
+
     public boolean togglePendingDelete(String filePath) {
         if (isPendingDelete(filePath)) {
             removePendingDelete(filePath);
@@ -158,67 +147,48 @@ public class PendingDeleteManager {
             return true;
         }
     }
-    
-    /**
-     * 获取所有待删除的文件
-     */
+
     public List<String> getPendingDeleteList() {
         return new ArrayList<>(getPendingFiles());
     }
-    
-    /**
-     * 获取待删除文件数量
-     */
+
     public int getPendingCount() {
-        return getPendingFiles().size();
+        return dao.count();
     }
-    
-    /**
-     * 删除所有待删除标记的文件
-     */
+
     public void deleteAllPending() {
         List<String> pendingFiles = getPendingDeleteList();
-        if (pendingFiles.isEmpty()) {
-            return;
-        }
-        
-        final int totalCount = pendingFiles.size();
-        
-        // 异步删除所有文件
+        if (pendingFiles.isEmpty()) return;
+
         deleteExecutor.execute(() -> {
             int successCount = 0;
             int failCount = 0;
             List<String> failedFiles = new ArrayList<>();
             List<String> failedFilePaths = new ArrayList<>();
-            
+
             for (String filePath : pendingFiles) {
                 DeleteResult result = deleteFileSync(filePath);
                 if (result.success) {
                     successCount++;
-                    // 删除成功，从待删除列表中移除
                     removePendingDelete(filePath);
                 } else {
                     failCount++;
                     failedFiles.add(new File(filePath).getName() + ": " + result.errorMessage);
                     failedFilePaths.add(filePath);
-                    // 删除失败，保留待删除标记
                     Log.w(TAG, "deleteAllPending: 删除失败，保留待删除标记 - " + new File(filePath).getName());
                 }
-                Log.d(TAG, "deleteAllPending: " + new File(filePath).getName() 
+                Log.d(TAG, "deleteAllPending: " + new File(filePath).getName()
                     + ", 成功: " + result.success + ", 原因: " + result.errorMessage);
             }
-            
-            // 在主线程回调和显示结果
+
             final int finalSuccessCount = successCount;
             final int finalFailCount = failCount;
             final List<String> finalFailedFiles = new ArrayList<>(failedFiles);
-            
+
             mainHandler.post(() -> {
                 for (OnFileDeletedListener l : listeners) {
                     l.onFilesDeleted(finalSuccessCount, finalFailCount, finalFailedFiles);
                 }
-                
-                // 显示删除结果（顶部弹窗）
                 StringBuilder message = new StringBuilder();
                 message.append("删除完成：成功 ").append(finalSuccessCount).append(" 个");
                 if (finalFailCount > 0) {
@@ -227,8 +197,7 @@ public class PendingDeleteManager {
                 Toast toast = Toast.makeText(context, message.toString(), Toast.LENGTH_LONG);
                 toast.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 100);
                 toast.show();
-                
-                // 如果有失败的文件，记录详细信息
+
                 if (!finalFailedFiles.isEmpty()) {
                     Log.e(TAG, "删除失败的文件（已保留待删除标记）：");
                     for (String failInfo : finalFailedFiles) {
@@ -238,51 +207,31 @@ public class PendingDeleteManager {
             });
         });
     }
-    
-    /**
-     * 清空待删除列表（不删除文件）
-     */
+
     public void clearAllPending() {
-        prefs.edit().remove(KEY_PENDING_FILES).apply();
+        dao.clear();
     }
-    
-    /**
-     * 获取最大待删除数量设置
-     */
+
     public int getMaxPendingCount() {
         return prefs.getInt(KEY_MAX_COUNT, DEFAULT_MAX_COUNT);
     }
-    
-    /**
-     * 设置最大待删除数量
-     */
+
     public void setMaxPendingCount(int count) {
-        if (count < 1) {
-            count = 1;
-        }
+        if (count < 1) count = 1;
         prefs.edit().putInt(KEY_MAX_COUNT, count).apply();
-        
-        // 检查当前待删除列表是否超过新的最大值
+
         LinkedHashSet<String> pendingFiles = new LinkedHashSet<>(getPendingFiles());
         while (pendingFiles.size() > count && !pendingFiles.isEmpty()) {
-            // 删除最早添加的文件（同步删除）
             String firstFile = pendingFiles.iterator().next();
-            
-            // 立即删除文件
             DeleteResult result = deleteFileSync(firstFile);
-            Log.d(TAG, "setMaxPendingCount: 超过新的最大值，删除文件 " + new File(firstFile).getName() 
+            Log.d(TAG, "setMaxPendingCount: 超过新的最大值，删除文件 " + new File(firstFile).getName()
                 + ", 结果: " + result.success + ", 原因: " + result.errorMessage);
-            
-            // 只有删除成功才从待删除列表中移除
             if (result.success) {
                 pendingFiles.remove(firstFile);
             } else {
-                // 删除失败，保留待删除标记，但需要跳出循环避免死循环
                 Log.w(TAG, "setMaxPendingCount: 删除失败，保留待删除标记 - " + new File(firstFile).getName());
                 break;
             }
-            
-            // 通知监听器
             if (!listeners.isEmpty()) {
                 final String file = firstFile;
                 final boolean success = result.success;
@@ -293,27 +242,51 @@ public class PendingDeleteManager {
                     }
                 });
             }
-            
-            // 显示删除结果
             showDeleteResult(firstFile, result);
         }
         savePendingFiles(pendingFiles);
         Log.d(TAG, "setMaxPendingCount: 设置为 " + count + ", 当前待删除数量 = " + pendingFiles.size());
     }
-    
-    /**
-     * 获取待删除文件集合
-     */
+
+    /** 从 Room 取出有序集合（markedAt 升序，即添加先后顺序）。 */
     private Set<String> getPendingFiles() {
-        return prefs.getStringSet(KEY_PENDING_FILES, new LinkedHashSet<>());
+        return new LinkedHashSet<>(dao.listAllPaths());
     }
-    
+
     /**
-     * 保存待删除文件集合
+     * 把内存中的 LinkedHashSet 写回 Room。
+     * 实现策略：算出新增/移除两个差集，分别 upsert / deleteByPath，
+     * 保持 markedAt 时间戳不被全表覆盖（避免顺序错乱）。
      */
     private void savePendingFiles(Set<String> files) {
-        // SharedPreferences 要求使用新的 Set 对象
-        prefs.edit().putStringSet(KEY_PENDING_FILES, new LinkedHashSet<>(files)).apply();
+        Set<String> existing = new LinkedHashSet<>(dao.listAllPaths());
+        long now = System.currentTimeMillis();
+        for (String p : files) {
+            if (!existing.contains(p)) {
+                dao.upsert(new PendingDeleteEntity(p, now));
+            }
+        }
+        for (String p : existing) {
+            if (!files.contains(p)) {
+                dao.deleteByPath(p);
+            }
+        }
+    }
+
+    /** 一次性把旧的 SharedPreferences 数据迁到 Room。 */
+    private void migrateFromSharedPrefsIfNeeded() {
+        SharedPreferences flag = context.getSharedPreferences(MIGRATE_PREF, Context.MODE_PRIVATE);
+        if (flag.getBoolean(MIGRATE_FLAG, false)) return;
+        Set<String> old = prefs.getStringSet(LEGACY_KEY, null);
+        if (old != null && !old.isEmpty()) {
+            long base = System.currentTimeMillis() - old.size();
+            int i = 0;
+            for (String p : old) {
+                if (p != null) dao.upsert(new PendingDeleteEntity(p, base + (i++)));
+            }
+            Log.d(TAG, "Migrated " + old.size() + " pending-delete entries from SP to Room");
+        }
+        flag.edit().putBoolean(MIGRATE_FLAG, true).apply();
     }
     
     /**
