@@ -50,6 +50,11 @@ public class PlaybackService extends Service {
     @Nullable private String title;
     @Nullable private String filePath;
     @Nullable private Player.Listener playerListener;
+    // 异步封面加载（避免在主线程做 IO）
+    private static final java.util.concurrent.ExecutorService coverExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+    @Nullable private Bitmap lastCover;
+    @Nullable private String lastCoverPath;
 
     @Override
     public void onCreate() {
@@ -147,27 +152,39 @@ public class PlaybackService extends Service {
                                     : PlaybackStateCompat.STATE_PAUSED, position, 1.0f);
         mediaSession.setPlaybackState(ps.build());
 
-        String displayTitle = title;
-        if (displayTitle == null && filePath != null) {
-            displayTitle = new File(filePath).getName();
-        }
-        if (displayTitle == null) displayTitle = "正在播放";
+        String rawTitle = title;
+        if (rawTitle == null && filePath != null) rawTitle = new File(filePath).getName();
+        final String displayTitle = (rawTitle != null) ? rawTitle : "正在播放";
 
+        // 通知使用已缓存的封面（异步后台更新）
+        final String currentPath = filePath;
+        if (currentPath != null && !currentPath.equals(lastCoverPath)) {
+            coverExecutor.execute(() -> {
+                Bitmap bmp = null;
+                try { bmp = ThumbnailLoader.extractThumbnail(currentPath); } catch (Exception ignored) {}
+                final Bitmap finalBmp = bmp;
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    lastCover = finalBmp;
+                    lastCoverPath = currentPath;
+                    pushNotificationWithCover(displayTitle, finalBmp);
+                });
+            });
+        } else {
+            pushNotificationWithCover(displayTitle, lastCover);
+        }
+    }
+
+    private void pushNotificationWithCover(String displayTitle, Bitmap cover) {
+        boolean isPlaying = player != null && player.isPlaying();
+        long position = player != null ? player.getCurrentPosition() : 0L;
+        long duration = player != null ? Math.max(0L, player.getDuration()) : 0L;
+
+        // 同步 MediaSession 元数据（含封面）
         MediaMetadataCompat.Builder md = new MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, displayTitle)
                 .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, displayTitle)
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration);
-        Bitmap cover = null;
-        if (filePath != null) {
-            try {
-                cover = ThumbnailLoader.extractThumbnail(filePath);
-                if (cover != null) {
-                    md.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, cover);
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "extract cover failed: " + e.getMessage());
-            }
-        }
+        if (cover != null) md.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, cover);
         mediaSession.setMetadata(md.build());
 
         Intent openIntent = new Intent(this, PlayerActivity.class)

@@ -67,6 +67,17 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean isAdjustingVolume = false;
     private boolean isAdjustingBrightness = false;
 
+    // 锁屏/触摸锁定
+    private boolean isScreenLocked = false;
+    private ImageButton lockButton;
+
+    // 屏幕比例
+    private static final int RESIZE_FIT    = 0; // 适应（黑边）
+    private static final int RESIZE_FILL   = 1; // 填充（可能裁剪）
+    private static final int RESIZE_ZOOM   = 2; // 拉伸
+    private int currentResizeMode = RESIZE_FIT;
+    private ImageButton resizeButton;
+
     // 长按快进相关
     private SeekPrefsManager seekPrefs;
     private boolean isLongPressing = false;
@@ -149,6 +160,18 @@ public class PlayerActivity extends AppCompatActivity {
                 ImageButton trackButton = topControlsView.findViewById(R.id.track_button);
                 if (trackButton != null) {
                     trackButton.setOnClickListener(v -> showTrackSheet());
+                }
+
+                // 锁屏按钮
+                lockButton = topControlsView.findViewById(R.id.lock_button);
+                if (lockButton != null) {
+                    lockButton.setOnClickListener(v -> toggleScreenLock());
+                }
+
+                // 屏幕比例切换按钮
+                resizeButton = topControlsView.findViewById(R.id.resize_button);
+                if (resizeButton != null) {
+                    resizeButton.setOnClickListener(v -> cycleResizeMode());
                 }
             }
             
@@ -312,6 +335,15 @@ public class PlayerActivity extends AppCompatActivity {
         playerView.setOnTouchListener((v, event) -> {
             int action = event.getAction();
 
+            // 锁屏模式：只允许触发解锁按钮（单击=显示lockButton，由GD处理）
+            if (isScreenLocked) {
+                if (action == MotionEvent.ACTION_UP) {
+                    // 显示锁屏按钮提示
+                    playerView.showController();
+                }
+                return true; // 消费所有事件，阻止穿透
+            }
+
             // ACTION_DOWN：预约长按检测
             if (action == MotionEvent.ACTION_DOWN) {
                 longPressHandler.postDelayed(() -> {
@@ -427,7 +459,45 @@ public class PlayerActivity extends AppCompatActivity {
         if (player == null) return;
         TrackBottomSheet sheet = new TrackBottomSheet();
         sheet.attach(player);
-        sheet.show(getSupportFragmentManager(), "track_sheet");
+        sheet.show(getSupportFragmentManager(), "track");
+    }
+
+    /** 锁屏：锁定时遮住所有控制，只保留解锁按钮。 */
+    private void toggleScreenLock() {
+        isScreenLocked = !isScreenLocked;
+        View topControls = playerView.findViewById(R.id.top_controls);
+        View bottomBar    = playerView.findViewById(R.id.exo_bottom_bar);
+        if (topControls != null) {
+            // 锁屏时隐藏除 lockButton 外的其他控件
+            for (int i = 0; i < ((android.view.ViewGroup) topControls).getChildCount(); i++) {
+                View child = ((android.view.ViewGroup) topControls).getChildAt(i);
+                if (child != lockButton) {
+                    child.setVisibility(isScreenLocked ? View.INVISIBLE : View.VISIBLE);
+                }
+            }
+        }
+        if (bottomBar != null) {
+            bottomBar.setVisibility(isScreenLocked ? View.GONE : View.VISIBLE);
+        }
+        if (lockButton != null) {
+            lockButton.setImageResource(isScreenLocked
+                    ? android.R.drawable.ic_lock_lock
+                    : android.R.drawable.ic_lock_idle_lock);
+        }
+        showSeekOverlay(isScreenLocked ? "已锁屏 — 单击解锁" : "已解锁");
+    }
+
+    /** 循环切换屏幕比例：适应 → 填充 → 拉伸 → 适应。 */
+    private void cycleResizeMode() {
+        currentResizeMode = (currentResizeMode + 1) % 3;
+        String[] labels = {"适应（黑边）", "填充（裁剪）", "拉伸"};
+        int[] modes = {
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT,
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL,
+            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        };
+        playerView.setResizeMode(modes[currentResizeMode]);
+        showSeekOverlay("比例: " + labels[currentResizeMode]);
     }
 
     private void toggleFavorite() {

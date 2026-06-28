@@ -53,6 +53,30 @@
             android:tint="#FFFFFF"
             android:contentDescription="字幕 / 音轨 / 倍速" />
 
+        <!-- 屏幕比例切换 -->
+        <ImageButton
+            android:id="@+id/resize_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:src="@android:drawable/ic_menu_crop"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:tint="#FFFFFF"
+            android:contentDescription="屏幕比例" />
+
+        <!-- 锁屏按钮 -->
+        <ImageButton
+            android:id="@+id/lock_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:src="@android:drawable/ic_lock_idle_lock"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:tint="#FFFFFF"
+            android:contentDescription="锁屏" />
+
     </LinearLayout>
 
     <!-- 底部控制栏（包含删除按钮、播放按钮、进度条、上一个、下一个） -->

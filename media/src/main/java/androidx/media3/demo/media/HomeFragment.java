@@ -154,6 +154,15 @@ public class HomeFragment extends Fragment {
                 startActivity(intent);
             }
         });
+
+        // 长按快捷菜单
+        adapter.setOnItemLongClickListener(fileItem -> {
+            if (!adapter.isSelectionMode()) {
+                showVideoQuickMenu(fileItem);
+                return true;
+            }
+            return false;
+        });
         
         // 设置 context 以初始化 FavoriteManager
         adapter.setContext(getContext());
@@ -784,6 +793,70 @@ public class HomeFragment extends Fragment {
         }).start();
     }
     
+    /** 长按视频项弹出快捷菜单（分享 / 收藏 / 待删除 / 信息）。 */
+    private void showVideoQuickMenu(FileItem fileItem) {
+        if (!isAdded() || getContext() == null) return;
+        String path = fileItem.getFile().getAbsolutePath();
+        FavoriteManager favMgr = FavoriteManager.getInstance(getContext());
+        boolean isFav = favMgr.isFavorite(path);
+        boolean isPending = pendingDeleteManager.isPendingDelete(path);
+
+        String[] options = {
+            isFav     ? "取消收藏 ★" : "收藏 ☆",
+            isPending ? "取消待删除" : "标记待删除",
+            "分享",
+            "视频信息"
+        };
+
+        new AlertDialog.Builder(getContext())
+            .setTitle(fileItem.getName())
+            .setItems(options, (dialog, which) -> {
+                switch (which) {
+                    case 0: // 收藏
+                        boolean nowFav = favMgr.toggleFavorite(path);
+                        if (isAdded() && getContext() != null)
+                            Toast.makeText(getContext(), nowFav ? "已收藏" : "已取消收藏", Toast.LENGTH_SHORT).show();
+                        adapter.notifyDataSetChanged();
+                        break;
+                    case 1: // 待删除
+                        boolean nowPending = pendingDeleteManager.togglePendingDelete(path);
+                        if (isAdded() && getContext() != null)
+                            Toast.makeText(getContext(), nowPending ? "已标记待删除" : "已取消待删除", Toast.LENGTH_SHORT).show();
+                        adapter.notifyDataSetChanged();
+                        break;
+                    case 2: // 分享
+                        try {
+                            android.net.Uri uri = FileShareHelper.getShareUri(getContext(), fileItem.getFile());
+                            Intent shareIntent = new Intent(Intent.ACTION_SEND)
+                                .setType("video/*")
+                                .putExtra(Intent.EXTRA_STREAM, uri)
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            startActivity(Intent.createChooser(shareIntent, "分享视频"));
+                        } catch (Exception e) {
+                            if (isAdded() && getContext() != null)
+                                Toast.makeText(getContext(), "分享失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                        break;
+                    case 3: // 信息
+                        long size = fileItem.getFile().length();
+                        long mod  = fileItem.getFile().lastModified();
+                        String sizeStr = android.text.format.Formatter.formatFileSize(getContext(), size);
+                        String dateStr = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(new java.util.Date(mod));
+                        new AlertDialog.Builder(getContext())
+                            .setTitle("视频信息")
+                            .setMessage("文件名：" + fileItem.getName()
+                                + "\n大小：" + sizeStr
+                                + "\n修改时间：" + dateStr
+                                + "\n路径：" + path)
+                            .setPositiveButton("关闭", null)
+                            .show();
+                        break;
+                }
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+
     private void clearFilter() {
         applyFilterAndSort();
         if (isAdded() && getContext() != null) {
