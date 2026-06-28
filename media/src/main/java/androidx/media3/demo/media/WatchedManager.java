@@ -38,7 +38,11 @@ public class WatchedManager {
     private static WatchedManager instance;
 
     private final WatchedDao dao;
-    private final Set<String> watchedVideos = new HashSet<>();
+    // 内存缓存：仅用于快速读取，写操作同时更新内存 + 异步写 DB
+    private final Set<String> watchedVideos = java.util.Collections.synchronizedSet(new HashSet<>());
+    // 异步写 DB 的线程池（单线程，按顺序执行，避免并发冲突）
+    private static final java.util.concurrent.ExecutorService dbWriter =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private WatchedManager(Context context) {
         this.dao = AppDatabase.get(context).watchedDao();
@@ -61,7 +65,9 @@ public class WatchedManager {
     public void markAsWatched(String filePath) {
         if (filePath == null) return;
         if (watchedVideos.add(filePath)) {
-            dao.upsert(new WatchedEntity(filePath, System.currentTimeMillis()));
+            // 异步写 DB，不阻塞调用方（通常在主线程）
+            dbWriter.execute(() ->
+                dao.upsert(new WatchedEntity(filePath, System.currentTimeMillis())));
             Log.d(TAG, "Marked as watched: " + filePath);
         }
     }
@@ -69,7 +75,7 @@ public class WatchedManager {
     public void unmarkAsWatched(String filePath) {
         if (filePath == null) return;
         if (watchedVideos.remove(filePath)) {
-            dao.deleteByPath(filePath);
+            dbWriter.execute(() -> dao.deleteByPath(filePath));
             Log.d(TAG, "Unmarked as watched: " + filePath);
         }
     }
@@ -106,17 +112,18 @@ public class WatchedManager {
 
     public void markMultipleAsWatched(List<String> filePaths) {
         if (filePaths == null || filePaths.isEmpty()) return;
-        List<WatchedEntity> batch = new ArrayList<>();
         long now = System.currentTimeMillis();
+        List<WatchedEntity> batch = new ArrayList<>();
         for (String p : filePaths) {
             if (p == null) continue;
-            if (watchedVideos.add(p)) {
-                batch.add(new WatchedEntity(p, now));
-            }
+            if (watchedVideos.add(p)) batch.add(new WatchedEntity(p, now));
         }
         if (!batch.isEmpty()) {
-            dao.insertAll(batch);
-            Log.d(TAG, "Marked " + batch.size() + " videos as watched");
+            final List<WatchedEntity> toInsert = batch;
+            dbWriter.execute(() -> {
+                dao.insertAll(toInsert);
+                Log.d(TAG, "Marked " + toInsert.size() + " videos as watched");
+            });
         }
     }
 
@@ -127,15 +134,20 @@ public class WatchedManager {
             if (p != null && watchedVideos.remove(p)) removed.add(p);
         }
         if (!removed.isEmpty()) {
-            dao.deleteByPaths(removed);
-            Log.d(TAG, "Unmarked " + removed.size() + " videos as watched");
+            final List<String> toDelete = removed;
+            dbWriter.execute(() -> {
+                dao.deleteByPaths(toDelete);
+                Log.d(TAG, "Unmarked " + toDelete.size() + " videos as watched");
+            });
         }
     }
 
     public void clearAllWatched() {
         watchedVideos.clear();
-        dao.clear();
-        Log.d(TAG, "Cleared all watched videos");
+        dbWriter.execute(() -> {
+            dao.clear();
+            Log.d(TAG, "Cleared all watched videos");
+        });
     }
 
     public void cleanupNonExistentVideos(Set<String> existingPaths) {

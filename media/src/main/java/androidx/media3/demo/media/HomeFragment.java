@@ -308,7 +308,9 @@ public class HomeFragment extends Fragment {
             currentPage = 0;
             hasMoreData = true;
             cacheManager.clearCache();
-            Toast.makeText(getContext(), "正在刷新视频列表...", Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "正在刷新视频列表...", Toast.LENGTH_SHORT).show();
+            }
             loadFiles(true); // 强制重新扫描
         });
     }
@@ -319,19 +321,30 @@ public class HomeFragment extends Fragment {
         if (storageSpinner != null) {
             storageSpinner.setVisibility(View.GONE);
         }
-        // 仍然在后台探测一次存储设备，供 loadFiles 使用
+        // 用 ApplicationContext（生命周期长于 Fragment），避免后台线程持有 Fragment 导致泄漏
+        if (!isAdded() || getContext() == null) return;
+        final android.content.Context appCtx = getContext().getApplicationContext();
         new Thread(() -> {
-            storageDirectories = FileUtils.getStorageDirectories(getContext());
+            List<File> dirs = FileUtils.getStorageDirectories(appCtx);
             File primaryStorage = Environment.getExternalStorageDirectory();
-            hasExternalStorage = false;
-            for (File dir : storageDirectories) {
+            boolean hasExt = false;
+            for (File dir : dirs) {
                 if (!dir.equals(primaryStorage) && dir.exists()) {
-                    hasExternalStorage = true;
+                    hasExt = true;
                     Log.d(TAG, "发现外部存储: " + dir.getAbsolutePath());
                     break;
                 }
             }
-            Log.d(TAG, "存储设备数量: " + storageDirectories.size() + ", 有外部存储: " + hasExternalStorage);
+            final boolean finalHasExt = hasExt;
+            final List<File> finalDirs = dirs;
+            if (isAdded() && getActivity() != null) {
+                getActivity().runOnUiThread(() -> {
+                    if (!isAdded()) return;
+                    storageDirectories = finalDirs;
+                    hasExternalStorage = finalHasExt;
+                    Log.d(TAG, "存储设备数量: " + storageDirectories.size() + ", 有外部存储: " + hasExternalStorage);
+                });
+            }
         }).start();
     }
     
@@ -434,13 +447,17 @@ public class HomeFragment extends Fragment {
         // 设置"已看"按钮
         filterWatchedButton.setOnClickListener(v -> {
             filterByWatchedStatus(true);
-            Toast.makeText(getContext(), "已筛选: 已看过的视频", Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "已筛选: 已看过的视频", Toast.LENGTH_SHORT).show();
+            }
         });
         
         // 设置"未看"按钮
         filterUnwatchedButton.setOnClickListener(v -> {
             filterByWatchedStatus(false);
-            Toast.makeText(getContext(), "已筛选: 未看过的视频", Toast.LENGTH_SHORT).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), "已筛选: 未看过的视频", Toast.LENGTH_SHORT).show();
+            }
         });
     }
 
@@ -480,7 +497,9 @@ public class HomeFragment extends Fragment {
                 int pendingCount = pendingDeleteManager.getPendingCount();
                 
                 if (pendingCount == 0) {
-                    Toast.makeText(getContext(), "没有待删除的视频", Toast.LENGTH_SHORT).show();
+                    if (isAdded() && getContext() != null) {
+                        Toast.makeText(getContext(), "没有待删除的视频", Toast.LENGTH_SHORT).show();
+                    }
                     return;
                 }
                 
@@ -491,7 +510,9 @@ public class HomeFragment extends Fragment {
                     .setPositiveButton("删除", (dialog, which) -> {
                         // 执行批量删除
                         pendingDeleteManager.deleteAllPending();
-                        Toast.makeText(getContext(), "正在删除 " + pendingCount + " 个视频...", Toast.LENGTH_SHORT).show();
+                        if (isAdded() && getContext() != null) {
+                            Toast.makeText(getContext(), "正在删除 " + pendingCount + " 个视频...", Toast.LENGTH_SHORT).show();
+                        }
                     })
                     .setNegativeButton("取消", null)
                     .show();
@@ -548,7 +569,9 @@ public class HomeFragment extends Fragment {
                     };
                     applySmartFilter(types[which]);
                 }
-                Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+                if (isAdded() && getContext() != null) {
+                    Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+                }
             })
             .show();
     }
@@ -569,7 +592,9 @@ public class HomeFragment extends Fragment {
                     };
                     applySmartFilter(types[which]);
                 }
-                Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+                if (isAdded() && getContext() != null) {
+                    Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+                }
             })
             .show();
     }
@@ -583,7 +608,9 @@ public class HomeFragment extends Fragment {
                     applyFilterAndSort();
                 } else {
                     // 显示加载提示
-                    Toast.makeText(getContext(), "正在分析视频时长...", Toast.LENGTH_LONG).show();
+                    if (isAdded() && getContext() != null) {
+                        Toast.makeText(getContext(), "正在分析视频时长...", Toast.LENGTH_LONG).show();
+                    }
                     
                     SmartFilterHelper.FilterType[] types = {
                         null,
@@ -611,9 +638,11 @@ public class HomeFragment extends Fragment {
                             loadPageData();
                             
                             updateEmptyView();
-                            Toast.makeText(getContext(), 
-                                "已筛选: " + options[selectedIndex] + " (" + filtered.size() + "个)", 
-                                Toast.LENGTH_SHORT).show();
+                            if (isAdded() && getContext() != null) {
+                                Toast.makeText(getContext(), 
+                                    "已筛选: " + options[selectedIndex] + " (" + filtered.size() + "个)", 
+                                    Toast.LENGTH_SHORT).show();
+                            }
                         });
                     }).start();
                 }
@@ -674,7 +703,9 @@ public class HomeFragment extends Fragment {
                     // 筛选已看过的视频
                     filterByWatchedStatus(true);
                 }
-                Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+                if (isAdded() && getContext() != null) {
+                    Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
+                }
             })
             .show();
     }
@@ -755,7 +786,9 @@ public class HomeFragment extends Fragment {
     
     private void clearFilter() {
         applyFilterAndSort();
-        Toast.makeText(getContext(), "已清除筛选", Toast.LENGTH_SHORT).show();
+        if (isAdded() && getContext() != null) {
+            Toast.makeText(getContext(), "已清除筛选", Toast.LENGTH_SHORT).show();
+        }
     }
     
     private void updateEmptyView() {
@@ -990,7 +1023,7 @@ public class HomeFragment extends Fragment {
                 Log.d(TAG, "加载更多完成，当前显示 " + displayedFiles.size() + 
                     "/" + filteredFiles.size() + " 个文件");
                 
-                if (!hasMoreData) {
+                if (!hasMoreData && isAdded() && getContext() != null) {
                     Toast.makeText(getContext(), "已加载全部视频", Toast.LENGTH_SHORT).show();
                 }
             });
@@ -1031,9 +1064,11 @@ public class HomeFragment extends Fragment {
         // 检查是否有删除权限
         if (!PermissionManager.hasManageStoragePermission()) {
             Log.w(TAG, "deleteSelectedFiles: 没有 MANAGE_EXTERNAL_STORAGE 权限");
-            Toast.makeText(getContext(), 
-                "需要\"管理所有文件\"权限才能删除文件", 
-                Toast.LENGTH_LONG).show();
+            if (isAdded() && getContext() != null) {
+                Toast.makeText(getContext(), 
+                    "需要\"管理所有文件\"权限才能删除文件", 
+                    Toast.LENGTH_LONG).show();
+            }
             PermissionManager.requestManageStoragePermission(getActivity());
             return;
         }
@@ -1046,7 +1081,9 @@ public class HomeFragment extends Fragment {
         if (deleteExecutor == null || deleteExecutor.isShutdown() || deleteExecutor.isTerminated()) {
             Log.e("HomeFragment", "deleteSelectedFiles: 删除线程池无效或已关闭");
             mainHandler.post(() -> {
-                Toast.makeText(getContext(), "删除服务不可用", Toast.LENGTH_SHORT).show();
+                if (isAdded() && getContext() != null) {
+                    Toast.makeText(getContext(), "删除服务不可用", Toast.LENGTH_SHORT).show();
+                }
             });
             return;
         }
@@ -1145,6 +1182,7 @@ public class HomeFragment extends Fragment {
                 loadFiles();
                 
                 // 显示删除结果
+                if (isAdded() && getContext() != null) {
                 if (finalFailCount == 0) {
                     Toast.makeText(getContext(), 
                         getString(R.string.delete_success) + " (" + finalSuccessCount + ")", 
@@ -1155,6 +1193,7 @@ public class HomeFragment extends Fragment {
                         ", " + getString(R.string.delete_failed) + ": " + finalFailCount, 
                         Toast.LENGTH_LONG).show();
                 }
+                } // end isAdded check
             });
         });
     }
@@ -1220,7 +1259,9 @@ public class HomeFragment extends Fragment {
                                 }
                             } catch (Exception e) {
                                 Log.e(TAG, "deleteFileUsingMediaStore: 无法启动授权对话框", e);
-                                Toast.makeText(getContext(), "删除失败：需要用户授权", Toast.LENGTH_LONG).show();
+                                if (isAdded() && getContext() != null) {
+                                    Toast.makeText(getContext(), "删除失败：需要用户授权", Toast.LENGTH_LONG).show();
+                                }
                             }
                         });
                     }

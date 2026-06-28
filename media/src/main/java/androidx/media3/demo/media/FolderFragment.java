@@ -68,8 +68,9 @@ public class FolderFragment extends Fragment {
         setupSwipeRefresh();
         setupRefreshButton();
         setupStorageSpinner();
-
-        // 加载文件夹
+        // setupStorageSpinner 会异步触发 loadFolders（通过 Spinner 的 onItemSelected 选中第0项）；
+        // 但 onItemSelected 只在 currentStorageFilter 真正变化时才调用 loadFolders，
+        // 首次设置 adapter 后如果当前 filter 已是 null（"全部"）也不会触发，故此处兜底触发一次。
         loadFolders();
 
         return view;
@@ -85,10 +86,7 @@ public class FolderFragment extends Fragment {
     }
 
     private void setupSwipeRefresh() {
-        swipeRefresh.setOnRefreshListener(() -> {
-            loadFolders();
-            swipeRefresh.setRefreshing(false);
-        });
+        swipeRefresh.setOnRefreshListener(this::loadFolders);
     }
 
     private void setupRefreshButton() {
@@ -101,10 +99,14 @@ public class FolderFragment extends Fragment {
      */
     private void setupStorageSpinner() {
         if (storageSpinner == null) return;
+        android.content.Context spinnerCtx = isAdded() && getContext() != null
+                ? getContext().getApplicationContext() : null;
+        if (spinnerCtx == null) return;
         new Thread(() -> {
-            final List<File> dirs = FileUtils.getStorageDirectories(getContext());
-            if (getActivity() == null) return;
+            final List<File> dirs = FileUtils.getStorageDirectories(spinnerCtx);
+            if (!isAdded() || getActivity() == null) return;
             getActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
                 storageDirectories = dirs;
                 File primary = Environment.getExternalStorageDirectory();
                 List<String> labels = new ArrayList<>();
@@ -154,6 +156,10 @@ public class FolderFragment extends Fragment {
         Log.d(TAG, "开始扫描视频文件夹...");
 
         // 在后台线程扫描
+        android.content.Context appCtx = isAdded() && getContext() != null
+                ? getContext().getApplicationContext() : null;
+        if (appCtx == null) return;
+
         new Thread(() -> {
             Map<String, FolderItem> folderMap = new HashMap<>();
 
@@ -162,7 +168,7 @@ public class FolderFragment extends Fragment {
             if (currentStorageFilter != null) {
                 scanTargets = Arrays.asList(currentStorageFilter);
             } else {
-                scanTargets = FileUtils.getStorageDirectories(getContext());
+                scanTargets = FileUtils.getStorageDirectories(appCtx);
             }
             Log.d(TAG, "扫描 " + scanTargets.size() + " 个存储设备，filter="
                     + (currentStorageFilter == null ? "全部" : currentStorageFilter.getAbsolutePath()));
@@ -189,8 +195,9 @@ public class FolderFragment extends Fragment {
             final int finalTotalVideos = totalVideos;
 
             // 更新UI
-            if (getActivity() != null) {
+            if (isAdded() && getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
+                    if (!isAdded()) return;
                     Log.d(TAG, "更新UI前 - folders.size: " + folders.size() + ", adapter不为空: " + (adapter != null));
                     folders.clear();
                     folders.addAll(folderList);
@@ -198,6 +205,9 @@ public class FolderFragment extends Fragment {
                     adapter.updateFolders(folderList);
                     updateEmptyView();
                     updateFolderCount();
+                    if (swipeRefresh != null && swipeRefresh.isRefreshing()) {
+                        swipeRefresh.setRefreshing(false);
+                    }
                     Log.d(TAG, "找到 " + folders.size() + " 个文件夹，共 " + finalTotalVideos + " 个视频");
                 });
             }

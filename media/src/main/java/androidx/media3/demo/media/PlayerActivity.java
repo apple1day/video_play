@@ -67,6 +67,13 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean isAdjustingVolume = false;
     private boolean isAdjustingBrightness = false;
 
+    // 长按快进相关
+    private SeekPrefsManager seekPrefs;
+    private boolean isLongPressing = false;
+    private float longPressOriginalSpeed = 1.0f;
+    private final android.os.Handler longPressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final long LONG_PRESS_TRIGGER_MS = 500; // 触发长按的阈值
+
     // 画中画 / 后台播放
     private boolean inPipMode = false;
     private boolean userLeaving = false;
@@ -101,6 +108,7 @@ public class PlayerActivity extends AppCompatActivity {
         playHistoryManager = PlayHistoryManager.getInstance(this);
         watchedManager = WatchedManager.getInstance(this);
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        seekPrefs = SeekPrefsManager.getInstance(this);
         
         Intent intent = getIntent();
         currentFilePath = intent.getStringExtra("file_path");
@@ -197,78 +205,69 @@ public class PlayerActivity extends AppCompatActivity {
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onSingleTapConfirmed(MotionEvent e) {
-                // 单击事件返回 false，让 PlayerView 处理（显示/隐藏控制器）
+                // 单击：让 PlayerView 处理（显示/隐藏控制器）
                 return false;
             }
-            
+
+            @Override
+            public void onLongPress(MotionEvent e) {
+                // 长按：进入快进模式（加速播放）
+                startLongPressSeek();
+            }
+
             @Override
             public boolean onDoubleTap(MotionEvent e) {
-                // 双击快进/快退
+                // 双击快进/快退（按当前模式计算量）
+                if (player == null) return false;
                 int screenWidth = playerView.getWidth();
                 float touchX = e.getX();
-                
-                if (player != null) {
-                    long currentPosition = player.getCurrentPosition();
-                    long seekAmount = 10000; // 10秒
-                    
-                    if (touchX < screenWidth / 2) {
-                        // 左侧双击 - 快退10秒
-                        long newPosition = Math.max(0, currentPosition - seekAmount);
-                        player.seekTo(newPosition);
-                        showSeekOverlay("◀◀ 快退10秒");
-                    } else {
-                        // 右侧双击 - 快进10秒
-                        long duration = player.getDuration();
-                        long newPosition = Math.min(duration, currentPosition + seekAmount);
-                        player.seekTo(newPosition);
-                        showSeekOverlay("快进10秒 ▶▶");
-                    }
-                    return true;
+                long duration = player.getDuration();
+                if (duration <= 0) return false;
+                float swipeRatio = 0.2f; // 双击固定给一个中等量
+                long seekMs = seekPrefs.calcSeekMs(duration, swipeRatio, touchX >= screenWidth / 2f);
+                long currentPosition = player.getCurrentPosition();
+                if (touchX < screenWidth / 2f) {
+                    player.seekTo(Math.max(0, currentPosition - seekMs));
+                    showSeekOverlay(SeekPrefsManager.buildOverlayText(seekMs, false));
+                } else {
+                    player.seekTo(Math.min(duration, currentPosition + seekMs));
+                    showSeekOverlay(SeekPrefsManager.buildOverlayText(seekMs, true));
                 }
-                return false;
+                return true;
             }
-            
+
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-                if (e1 == null || e2 == null) {
-                    return false;
-                }
-                
-                int screenWidth = playerView.getWidth();
+                if (e1 == null || e2 == null) return false;
+
+                int screenWidth  = playerView.getWidth();
                 int screenHeight = playerView.getHeight();
-                float startX = e1.getX();
-                float totalDeltaX = e2.getX() - e1.getX(); // 水平总位移
-                float totalDeltaY = e1.getY() - e2.getY(); // 垂直总位移（正值表示向上）
-                
-                // 根据滑动距离判断是水平还是垂直操作
+                float sx = e1.getX();
+                float totalDeltaX = e2.getX() - e1.getX();
+                float totalDeltaY = e1.getY() - e2.getY(); // 正值=向上
+
                 float absDeltaX = Math.abs(totalDeltaX);
                 float absDeltaY = Math.abs(totalDeltaY);
-                
-                // 将屏幕分为三部分：左(0-33%)、中(33%-67%)、右(67%-100%)
-                float leftBoundary = screenWidth * 0.33f;
+
+                float leftBoundary  = screenWidth * 0.33f;
                 float rightBoundary = screenWidth * 0.67f;
-                
-                // 垂直滑动优先（上下滑动距离明显大于左右）
+
+                // 垂直滑动优先
                 if (absDeltaY > absDeltaX * 1.5f && absDeltaY > 30) {
-                    if (startX < leftBoundary) {
-                        // 左侧 - 调节亮度
+                    if (sx < leftBoundary) {
                         adjustBrightness(totalDeltaY, screenHeight);
                         return true;
-                    } else if (startX > rightBoundary) {
-                        // 右侧 - 调节音量
+                    } else if (sx > rightBoundary) {
                         adjustVolume(totalDeltaY, screenHeight);
                         return true;
                     } else {
-                        // 中间区域 - 切换视频（需要更大的滑动距离）
                         if (absDeltaY > 80) {
                             if (totalDeltaY > 0) {
-                                // 向上滑动 - 切换到下一个视频
                                 if (player != null && player.hasNextMediaItem()) {
                                     player.seekToNextMediaItem();
                                     showSeekOverlay("下一个视频 ▼");
                                 }
                             } else {
-                                // 向下滑动 - 切换到上一个视频
                                 if (player != null && player.hasPreviousMediaItem()) {
                                     player.seekToPreviousMediaItem();
                                     showSeekOverlay("上一个视频 ▲");
@@ -278,63 +277,82 @@ public class PlayerActivity extends AppCompatActivity {
                         }
                     }
                 }
-                
                 return false;
             }
-            
+
             @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                if (e1 == null || e2 == null) {
-                    return false;
-                }
-                
+                if (e1 == null || e2 == null || player == null) return false;
+
                 float diffX = e2.getX() - e1.getX();
                 float diffY = e2.getY() - e1.getY();
-                
-                // 水平快速滑动 - 快进/快退
-                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 100) {
-                    if (player != null) {
-                        long currentPosition = player.getCurrentPosition();
-                        long seekAmount = 15000; // 15秒
-                        
-                        if (diffX > 0) {
-                            // 右滑 - 快进
-                            long duration = player.getDuration();
-                            long newPosition = Math.min(duration, currentPosition + seekAmount);
-                            player.seekTo(newPosition);
-                            showSeekOverlay("快进15秒 ▶▶");
-                        } else {
-                            // 左滑 - 快退
-                            long newPosition = Math.max(0, currentPosition - seekAmount);
-                            player.seekTo(newPosition);
-                            showSeekOverlay("◀◀ 快退15秒");
-                        }
-                        return true;
+
+                // 水平快速滑动：根据滑动距离计算快进量
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 80) {
+                    long duration = player.getDuration();
+                    if (duration <= 0) return false;
+                    // 以屏幕宽度归一化滑动距离（0–1），映射到快进区间
+                    float swipeRatio = Math.min(1f, Math.abs(diffX) / playerView.getWidth());
+                    boolean forward = diffX > 0;
+                    long seekMs = seekPrefs.calcSeekMs(duration, swipeRatio, forward);
+                    long pos = player.getCurrentPosition();
+                    if (forward) {
+                        player.seekTo(Math.min(duration, pos + seekMs));
+                    } else {
+                        player.seekTo(Math.max(0, pos - seekMs));
                     }
+                    showSeekOverlay(SeekPrefsManager.buildOverlayText(seekMs, forward));
+                    return true;
                 }
-                
                 return false;
             }
         });
-        
-        // 为PlayerView添加触摸监听
-        playerView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                // 先让手势检测器处理
-                boolean handled = gestureDetector.onTouchEvent(event);
-                
-                // 处理触摸结束事件，隐藏调节提示
-                if (event.getAction() == MotionEvent.ACTION_UP || 
-                    event.getAction() == MotionEvent.ACTION_CANCEL) {
-                    isAdjustingVolume = false;
-                    isAdjustingBrightness = false;
-                }
-                
-                // 只有当手势被处理时才返回 true，否则返回 false 让 PlayerView 处理单击
-                return handled;
+
+        // 为 PlayerView 添加触摸监听（同时处理长按释放）
+        playerView.setOnTouchListener((v, event) -> {
+            int action = event.getAction();
+
+            // ACTION_DOWN：预约长按检测
+            if (action == MotionEvent.ACTION_DOWN) {
+                longPressHandler.postDelayed(() -> {
+                    // 由 GestureDetector.onLongPress 触发，此处仅作备用
+                }, LONG_PRESS_TRIGGER_MS);
             }
+
+            // ACTION_UP / CANCEL：结束长按快进
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                stopLongPressSeek();
+                isAdjustingVolume = false;
+                isAdjustingBrightness = false;
+            }
+
+            boolean handled = gestureDetector.onTouchEvent(event);
+            return handled;
         });
+    }
+
+    /** 进入长按快进：提升播放速度并显示提示。 */
+    private void startLongPressSeek() {
+        if (player == null || isLongPressing) return;
+        isLongPressing = true;
+        longPressOriginalSpeed = player.getPlaybackParameters().speed;
+        float speed = seekPrefs.getLongPressSpeed();
+        player.setPlaybackSpeed(speed);
+        String label = (speed == (int) speed)
+                ? ((int) speed) + "x"
+                : speed + "x";
+        showSeekOverlay("长按快进 " + label + " ▶▶");
+    }
+
+    /** 退出长按快进：恢复原速。 */
+    private void stopLongPressSeek() {
+        if (!isLongPressing) return;
+        isLongPressing = false;
+        longPressHandler.removeCallbacksAndMessages(null);
+        if (player != null) {
+            player.setPlaybackSpeed(longPressOriginalSpeed);
+        }
+        if (seekOverlay != null) seekOverlay.setVisibility(View.GONE);
     }
     
     // 调节音量
@@ -802,10 +820,27 @@ public class PlayerActivity extends AppCompatActivity {
         if (playerView != null) {
             playerView.onPause();
         }
+        // 在 onStop 就保存进度，保证 Activity 被系统杀死时也能续播
+        saveCurrentProgress();
         // 解绑服务；若播放器已暂停则停止前台
         try { unbindService(serviceConn); } catch (Exception ignored) {}
         if (player != null && !player.isPlaying()) {
             stopService(new Intent(this, PlaybackService.class));
+        }
+    }
+
+    /** 保存当前播放进度并更新观看状态（可在 onStop/onDestroy 中调用）。 */
+    private void saveCurrentProgress() {
+        if (player == null || currentFilePath == null) return;
+        try {
+            long duration = player.getDuration();
+            if (duration > 0) {
+                long position = player.getCurrentPosition();
+                playHistoryManager.savePlayPosition(currentFilePath, position, duration);
+                watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
+            }
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "Error saving play position: " + e.getMessage());
         }
     }
 
@@ -876,27 +911,8 @@ public class PlayerActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
 
-        // 保存播放位置，并检查是否已观看
-        if (player != null && currentFilePath != null) {
-            try {
-                long duration = player.getDuration();
-                if (duration > 0) {
-                    long position = player.getCurrentPosition();
-
-                    playHistoryManager.savePlayPosition(
-                        currentFilePath,
-                        position,
-                        duration
-                    );
-
-                    // 检查并标记为已观看（播放超过80%自动标记）
-                    watchedManager.checkAndMarkWatched(currentFilePath, position, duration);
-                }
-            } catch (Exception e) {
-                // 捕获可能的异常，避免闪退
-                android.util.Log.e(TAG, "Error saving play position: " + e.getMessage());
-            }
-        }
+        // onStop 已保存进度；onDestroy 再兜底一次（处理极端情况：onStop 未被调用）
+        saveCurrentProgress();
 
         // 停止前台服务（避免幽灵通知）
         if (boundService != null) {

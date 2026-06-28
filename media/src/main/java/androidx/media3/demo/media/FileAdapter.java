@@ -41,10 +41,11 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
     private LruCache<String, Boolean> watchedCache = new LruCache<>(200);
     private LruCache<String, Boolean> pendingDeleteCache = new LruCache<>(200);
 
-    // 视频时长懒加载执行器（避免重复创建）
-    private final java.util.concurrent.ExecutorService durationExecutor =
+    // 视频时长懒加载执行器（共享单例，避免重复创建和泄漏）
+    private static final java.util.concurrent.ExecutorService durationExecutor =
             java.util.concurrent.Executors.newFixedThreadPool(2);
-    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final android.os.Handler mainHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
 
     public interface OnItemClickListener {
         void onItemClick(FileItem item);

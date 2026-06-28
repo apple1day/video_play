@@ -29,6 +29,13 @@ public class SettingsActivity extends AppCompatActivity {
     private TextView pendingCountText;
     private LinearLayout storageInfoLayout;
 
+    // 快进设置
+    private SeekPrefsManager seekPrefs;
+    private TextView seekPercentText;
+    private TextView seekCurrentHint;
+    private View seekPercentRow;
+    private View seekFixedHint;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -117,6 +124,86 @@ public class SettingsActivity extends AppCompatActivity {
                 updatePendingCountDisplay();
             }
         });
+
+        // ── 快进设置 ────────────────────────────────────────────
+        seekPrefs = SeekPrefsManager.getInstance(this);
+        seekPercentText  = findViewById(R.id.seek_percent_text);
+        seekCurrentHint  = findViewById(R.id.seek_current_hint);
+        seekPercentRow   = findViewById(R.id.seek_percent_row);
+        seekFixedHint    = findViewById(R.id.seek_fixed_hint);
+
+        Button seekModePercentBtn = findViewById(R.id.seek_mode_percent_btn);
+        Button seekModeFixedBtn   = findViewById(R.id.seek_mode_fixed_btn);
+        Button seekPercentDec     = findViewById(R.id.seek_percent_decrease);
+        Button seekPercentInc     = findViewById(R.id.seek_percent_increase);
+        Button longSpeed15        = findViewById(R.id.long_speed_1_5);
+        Button longSpeed20        = findViewById(R.id.long_speed_2_0);
+        Button longSpeed30        = findViewById(R.id.long_speed_3_0);
+
+        updateSeekUI();
+
+        seekModePercentBtn.setOnClickListener(v -> {
+            seekPrefs.setSeekMode(SeekPrefsManager.MODE_PERCENT);
+            updateSeekUI();
+        });
+        seekModeFixedBtn.setOnClickListener(v -> {
+            seekPrefs.setSeekMode(SeekPrefsManager.MODE_FIXED);
+            updateSeekUI();
+        });
+        seekPercentDec.setOnClickListener(v -> {
+            seekPrefs.setSeekPercent(seekPrefs.getSeekPercent() - 1);
+            updateSeekUI();
+        });
+        seekPercentInc.setOnClickListener(v -> {
+            seekPrefs.setSeekPercent(seekPrefs.getSeekPercent() + 1);
+            updateSeekUI();
+        });
+        longSpeed15.setOnClickListener(v -> { seekPrefs.setLongPressSpeed(1.5f); updateSeekUI(); });
+        longSpeed20.setOnClickListener(v -> { seekPrefs.setLongPressSpeed(2.0f); updateSeekUI(); });
+        longSpeed30.setOnClickListener(v -> { seekPrefs.setLongPressSpeed(3.0f); updateSeekUI(); });
+    }
+
+    private void updateSeekUI() {
+        int mode = seekPrefs.getSeekMode();
+        int pct  = seekPrefs.getSeekPercent();
+        float spd = seekPrefs.getLongPressSpeed();
+
+        // 百分比行 / 固定说明 可见性
+        seekPercentRow.setVisibility(mode == SeekPrefsManager.MODE_PERCENT ? View.VISIBLE : View.GONE);
+        seekFixedHint.setVisibility(mode == SeekPrefsManager.MODE_FIXED   ? View.VISIBLE : View.GONE);
+
+        seekPercentText.setText(pct + "%");
+
+        // 当前设置汇总
+        String modeStr = (mode == SeekPrefsManager.MODE_PERCENT)
+                ? "百分比 " + pct + "%"
+                : "固定 " + SeekPrefsManager.FIXED_MIN_SEC + "s–" + SeekPrefsManager.FIXED_MAX_SEC + "s";
+        String speedStr = (spd == (int) spd) ? ((int) spd) + "x" : spd + "x";
+        seekCurrentHint.setText("当前：滑动=" + modeStr + "  长按=" + speedStr);
+
+        // 高亮选中的模式按钮
+        int activeColor   = 0xFFFF6B35;
+        int inactiveColor = 0xFF666666;
+        findViewById(R.id.seek_mode_percent_btn).setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(
+                        mode == SeekPrefsManager.MODE_PERCENT ? 0x22FF6B35 : 0x00000000));
+        ((TextView) findViewById(R.id.seek_mode_percent_btn)).setTextColor(
+                mode == SeekPrefsManager.MODE_PERCENT ? activeColor : inactiveColor);
+        findViewById(R.id.seek_mode_fixed_btn).setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(
+                        mode == SeekPrefsManager.MODE_FIXED ? 0x22FF6B35 : 0x00000000));
+        ((TextView) findViewById(R.id.seek_mode_fixed_btn)).setTextColor(
+                mode == SeekPrefsManager.MODE_FIXED ? activeColor : inactiveColor);
+
+        // 高亮选中的倍速按钮
+        int[] speedIds = {R.id.long_speed_1_5, R.id.long_speed_2_0, R.id.long_speed_3_0};
+        float[] speeds = {1.5f, 2.0f, 3.0f};
+        for (int i = 0; i < speedIds.length; i++) {
+            boolean selected = Math.abs(spd - speeds[i]) < 0.05f;
+            ((TextView) findViewById(speedIds[i])).setTextColor(selected ? activeColor : inactiveColor);
+            findViewById(speedIds[i]).setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(selected ? 0x22FF6B35 : 0x00000000));
+        }
     }
 
     private void updatePendingCountDisplay() {
