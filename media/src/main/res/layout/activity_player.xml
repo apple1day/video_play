@@ -15,7 +15,8 @@
         app:show_buffering="when_playing"
         app:show_timeout="3000"
         app:hide_on_touch="false"
-        app:shutter_background_color="#00000000" />
+        app:shutter_background_color="#00000000"
+        app:surface_type="surface_view" />
 
     <!-- 双击快进/快退提示 -->
     <TextView

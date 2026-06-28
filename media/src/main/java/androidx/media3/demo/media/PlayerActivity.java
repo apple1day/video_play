@@ -29,8 +29,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
+import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
@@ -577,7 +580,30 @@ public class PlayerActivity extends AppCompatActivity {
             player = null;
         }
 
-        player = new ExoPlayer.Builder(this).build();
+        // ── 解码器配置：优先硬解，fallback 软解 ──────────────────────────────
+        DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
+            // 优先硬解（PREFER_DEVICE_SUPPORTED_DECODERS = 默认）
+            // 硬解失败时自动 fallback 软解，避免黑屏/花屏
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true);
+
+        // ── LoadControl：增大缓冲区，减少卡顿 ────────────────────────────────
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs      */ 15_000,   // 最小缓冲 15s（默认 50s 太激进，15s 足够流畅）
+                /* maxBufferMs      */ 50_000,   // 最大缓冲 50s
+                /* bufferForPlaybackMs              */ 2_500,  // 首帧等待 2.5s
+                /* bufferForPlaybackAfterRebufferMs */ 5_000   // 卡顿后恢复 5s
+            )
+            .build();
+
+        player = new ExoPlayer.Builder(this, renderersFactory)
+            .setLoadControl(loadControl)
+            .build();
+
+        // VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING 会放大填充，导致边缘裁剪
+        // 使用 VIDEO_SCALING_MODE_SCALE_TO_FIT（默认），保持宽高比，不拉伸
+        player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
         player.setHandleAudioBecomingNoisy(true);
         playerView.setPlayer(player);
 
