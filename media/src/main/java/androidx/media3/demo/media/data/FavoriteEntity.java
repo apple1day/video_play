@@ -2,6 +2,7 @@ package androidx.media3.demo.media.data;
 
 import androidx.annotation.NonNull;
 import androidx.room.Entity;
+import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
 
 /**
@@ -19,6 +20,7 @@ public class FavoriteEntity {
 
     public FavoriteEntity() {}
 
+    @Ignore
     public FavoriteEntity(@NonNull String filePath, long createdAt) {
         this.filePath = filePath;
         this.createdAt = createdAt;

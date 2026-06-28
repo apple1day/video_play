@@ -2,6 +2,7 @@ package androidx.media3.demo.media.data;
 
 import androidx.annotation.NonNull;
 import androidx.room.Entity;
+import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
 
 /**
@@ -26,6 +27,7 @@ public class PlayHistoryEntity {
 
     public PlayHistoryEntity() {}
 
+    @Ignore
     public PlayHistoryEntity(@NonNull String filePath, long position, long duration, long updatedAt) {
         this.filePath = filePath;
         this.position = position;

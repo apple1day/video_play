@@ -78,12 +78,16 @@ public class ThumbnailLoader {
                 .asBitmap()
                 .load(videoFile)
                 .apply(options)
-                .into(new com.bumptech.glide.request.target.SimpleTarget<Bitmap>() {
+                .into(new com.bumptech.glide.request.target.CustomTarget<Bitmap>() {
                     @Override
                     public void onResourceReady(@androidx.annotation.NonNull Bitmap resource,
                                                 @androidx.annotation.Nullable com.bumptech.glide.request.transition.Transition<? super Bitmap> transition) {
-                        memCache.put(key, resource); // 写入 L1
+                        memCache.put(key, resource);
                         imageView.setImageBitmap(resource);
+                    }
+                    @Override
+                    public void onLoadCleared(@androidx.annotation.Nullable android.graphics.drawable.Drawable placeholder) {
+                        // 资源被释放时不做处理（ImageView已持有Bitmap引用）
                     }
                 });
     }
