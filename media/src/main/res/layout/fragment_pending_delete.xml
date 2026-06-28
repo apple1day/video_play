@@ -4,14 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F8F9FA">
+    android:background="@color/md_surface_container">
 
-    <!-- 顶部 Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#FFFFFF"
+        android:background="@color/md_surface"
         android:elevation="4dp"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
@@ -36,7 +35,7 @@
                     android:text="待删除"
                     android:textSize="20sp"
                     android:textStyle="bold"
-                    android:textColor="#1A1A1A" />
+                    android:textColor="@color/md_on_surface" />
 
                 <TextView
                     android:id="@+id/count_text"
@@ -44,19 +43,18 @@
                     android:layout_height="wrap_content"
                     android:text="暂无待删除视频"
                     android:textSize="12sp"
-                    android:textColor="#BDBDBD"
+                    android:textColor="@color/md_on_surface_hint"
                     android:layout_marginTop="2dp" />
 
             </LinearLayout>
 
-            <!-- 全部删除按钮 -->
             <Button
                 android:id="@+id/delete_all_button"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:text="全部删除"
                 android:textSize="13sp"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/md_on_error"
                 android:background="@drawable/btn_delete_red"
                 android:paddingStart="18dp"
                 android:paddingEnd="18dp"
@@ -66,18 +64,16 @@
 
         </LinearLayout>
 
-        <!-- 提示文字 -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="长按视频可取消标记或立即删除"
             android:textSize="11sp"
-            android:textColor="#BDBDBD"
+            android:textColor="@color/md_on_surface_hint"
             android:layout_marginTop="6dp" />
 
     </LinearLayout>
 
-    <!-- 空状态视图 -->
     <LinearLayout
         android:id="@+id/empty_view"
         android:layout_width="match_parent"
@@ -98,7 +94,7 @@
             android:layout_height="wrap_content"
             android:text="暂无待删除视频"
             android:textSize="16sp"
-            android:textColor="#BDBDBD"
+            android:textColor="@color/md_on_surface_hint"
             android:layout_marginTop="12dp" />
 
         <TextView
@@ -106,12 +102,11 @@
             android:layout_height="wrap_content"
             android:text="在播放器中标记视频后会显示在这里"
             android:textSize="13sp"
-            android:textColor="#D0D0D0"
+            android:textColor="@color/md_on_surface_muted"
             android:layout_marginTop="6dp" />
 
     </LinearLayout>
 
-    <!-- 列表 -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_view"
         android:layout_width="match_parent"

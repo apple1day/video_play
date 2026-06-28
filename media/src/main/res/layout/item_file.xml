@@ -9,7 +9,7 @@
     android:layout_marginBottom="6dp"
     app:cardCornerRadius="12dp"
     app:cardElevation="2dp"
-    app:cardBackgroundColor="#FFFFFF"
+    app:cardBackgroundColor="@color/md_surface"
     android:foreground="?android:attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true">
@@ -31,7 +31,7 @@
             android:visibility="gone"
             android:clickable="false"
             android:focusable="false"
-            android:buttonTint="#FF6B35" />
+            android:buttonTint="@color/md_primary" />
 
         <!-- 缩略图（圆角） + 时长徽标 -->
         <FrameLayout
@@ -80,7 +80,7 @@
                 android:layout_height="wrap_content"
                 android:textSize="14sp"
                 android:textStyle="bold"
-                android:textColor="#1A1A1A"
+                android:textColor="@color/md_on_surface"
                 android:maxLines="2"
                 android:ellipsize="end"
                 android:lineSpacingMultiplier="1.2" />
@@ -91,7 +91,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textSize="11sp"
-                android:textColor="#BDBDBD"
+                android:textColor="@color/md_on_surface_hint"
                 android:layout_marginTop="4dp"
                 android:maxLines="1"
                 android:ellipsize="end" />

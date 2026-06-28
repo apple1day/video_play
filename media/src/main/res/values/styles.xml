@@ -1,10 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="PlayerTheme" parent="Theme.AppCompat.Light.NoActionBar">
+
+    <!--
+        Material 3 主题。所有非播放器界面继承这个主题。
+        - 用 Material3.DayNight 作为父：颜色随系统暗/亮主题自动切换。
+        - colorPrimary 等 attr 全部映射到 colors.xml 中定义的 token。
+        - 仍然 NoActionBar：项目所有 Activity 都用自定义 toolbar。
+    -->
+    <style name="Theme.Anxiong" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/md_primary</item>
+        <item name="colorOnPrimary">@color/md_on_primary</item>
+        <item name="colorPrimaryContainer">@color/md_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/md_on_primary_container</item>
+
+        <item name="colorSecondary">@color/md_secondary</item>
+        <item name="colorOnSecondary">@color/md_on_secondary</item>
+
+        <item name="colorError">@color/md_error</item>
+        <item name="colorOnError">@color/md_on_error</item>
+
+        <item name="colorSurface">@color/md_surface</item>
+        <item name="colorSurfaceVariant">@color/md_surface_variant</item>
+        <item name="colorOnSurface">@color/md_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/md_on_surface_variant</item>
+        <item name="colorOutline">@color/md_outline</item>
+
+        <item name="android:windowBackground">@color/md_surface_container</item>
+        <item name="android:statusBarColor">@color/md_surface</item>
+        <item name="android:navigationBarColor">@color/md_surface</item>
+
+        <!--
+            Dynamic Color：Android 12+ 自动跟随壁纸取色。
+            Material 3 Library 2.+ 提供这个属性。Manifest 里在 Application 初始化时再调
+            DynamicColors.applyToActivitiesIfAvailable(application) 完成接入。
+        -->
+        <item name="dynamicColorThemeOverlay">@style/ThemeOverlay.Material3.DynamicColors.DayNight</item>
+    </style>
+
+    <!-- 播放器：保持纯黑 + 全屏沉浸式 -->
+    <style name="PlayerTheme" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
     </style>
-    
+
     <!-- 自定义播放器控制器样式 - 去掉背景遮罩 -->
     <style name="TransparentPlayerControlView" parent="Widget.AppCompat.ActionButton">
         <item name="android:background">@android:color/transparent</item>

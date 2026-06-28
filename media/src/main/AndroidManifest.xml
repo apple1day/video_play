@@ -48,18 +48,20 @@
         tools:ignore="ScopedStorage" />
 
     <application
+        android:name=".AnxiongApplication"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:supportsRtl="true"
         android:requestLegacyExternalStorage="true"
+        android:theme="@style/Theme.Anxiong"
         tools:targetApi="31">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+            android:theme="@style/Theme.Anxiong">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -103,18 +105,18 @@
 
         <activity
             android:name=".SettingsActivity"
-            android:theme="@style/Theme.AppCompat.Light"
+            android:theme="@style/Theme.Anxiong"
             android:exported="false" />
 
         <activity
             android:name=".AllVideosActivity"
-            android:theme="@style/Theme.AppCompat.Light"
+            android:theme="@style/Theme.Anxiong"
             android:label="@string/all_videos"
             android:exported="false" />
 
         <activity
             android:name=".FolderDetailActivity"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:theme="@style/Theme.Anxiong"
             android:exported="false" />
 
         <!-- FileProvider 配置 - 实现文件共享功能 -->

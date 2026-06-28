@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        Material 3 调色板。
+        命名遵循 M3 token 习惯（primary / on_primary / surface ……），
+        但用 androidx legacy 命名空间避免引 Material Components 全套依赖。
+        所有 XML 都改成引用这里的颜色，不再写 #FF6B35 这类硬编码。
+    -->
+
+    <!-- Brand：橙红主色 -->
+    <color name="md_primary">#FF6B35</color>
+    <color name="md_on_primary">#FFFFFFFF</color>
+    <color name="md_primary_container">#FFE0D4</color>
+    <color name="md_on_primary_container">#3D1500</color>
+
+    <color name="md_secondary">#FF8A65</color>
+    <color name="md_on_secondary">#FFFFFFFF</color>
+
+    <color name="md_error">#E53935</color>
+    <color name="md_on_error">#FFFFFFFF</color>
+    <color name="md_warning">#F4B400</color>
+    <color name="md_success">#43A047</color>
+
+    <!-- Surface 体系（浅色） -->
+    <color name="md_surface">#FFFFFFFF</color>
+    <color name="md_surface_container">#F8F9FA</color>
+    <color name="md_surface_variant">#EEEEEE</color>
+    <color name="md_outline">#E0E0E0</color>
+
+    <color name="md_on_surface">#1A1A1A</color>
+    <color name="md_on_surface_variant">#5F5F5F</color>
+    <color name="md_on_surface_muted">#9E9E9E</color>
+    <color name="md_on_surface_hint">#BDBDBD</color>
+
+    <!-- 中性遮罩 -->
+    <color name="md_scrim">#80000000</color>
+    <color name="md_player_chrome">#1F1F1F</color>
+
+</resources>
