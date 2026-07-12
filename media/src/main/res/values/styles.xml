@@ -56,5 +56,15 @@
         <item name="android:textSize">10sp</item>
         <item name="android:textStyle">normal</item>
     </style>
+
+    <!-- 底部弹出菜单样式（无标题栏，底部弹出，背景透明） -->
+    <style name="BottomSheetDialogStyle" parent="android:style/Theme.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.4</item>
+    </style>
 </resources>
 

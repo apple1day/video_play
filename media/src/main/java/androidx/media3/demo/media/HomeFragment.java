@@ -1,6 +1,7 @@
 package androidx.media3.demo.media;
 
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -23,6 +24,10 @@ import android.widget.TextView;
 import android.text.TextUtils;
 import android.widget.Toast;
 import android.app.AlertDialog;
+import android.view.Gravity;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -55,11 +60,16 @@ public class HomeFragment extends Fragment {
     private Button sortSizeButton;
     private Button filterWatchedButton;
     private Button filterUnwatchedButton;
-    private Button viewToggleButton;
+    private View viewToggleButton;
     private Button smartFilterButton;
     private Button deleteAllPendingButton;
     private View toolbarLayout;
     private View selectionToolbarLayout;
+    // 新增：顶部图标按钮
+    private View btnSearch;
+    private View btnSort;
+    private View btnFilter;
+    private android.app.Dialog searchDialog;
     private Button selectAllButton;
     private Button selectFavoritesButton;
     private Button selectWatchedButton;
@@ -86,7 +96,8 @@ public class HomeFragment extends Fragment {
     private androidx.media3.demo.media.viewmodel.VideoListViewModel videoListViewModel;
     
     // 分页相关
-    private static final int PAGE_SIZE = 100; // 每页加载100个
+    private static final int FIRST_PAGE_SIZE = 10;  // 首次仅加载10个，快速展示
+    private static final int PAGE_SIZE = 50;         // 后续每页加载50个
     private int currentPage = 0; // 当前页码
     private boolean isLoading = false; // 是否正在加载
     private boolean hasMoreData = true; // 是否还有更多数据
@@ -133,6 +144,9 @@ public class HomeFragment extends Fragment {
         deleteAllPendingButton = view.findViewById(R.id.delete_all_pending_button);
         toolbarLayout = view.findViewById(R.id.toolbar_layout);
         selectionToolbarLayout = view.findViewById(R.id.selection_toolbar_layout);
+        btnSearch = view.findViewById(R.id.btn_search);
+        btnSort = view.findViewById(R.id.btn_sort);
+        btnFilter = view.findViewById(R.id.btn_filter);
         selectAllButton = view.findViewById(R.id.select_all_button);
         selectFavoritesButton = view.findViewById(R.id.select_favorites_button);
         selectWatchedButton = view.findViewById(R.id.select_watched_button);
@@ -189,6 +203,7 @@ public class HomeFragment extends Fragment {
         setupSmartFilterButton();
         setupDeleteAllPendingButton();
         setupSelectionButtons();
+        setupIconButtons();
         
         // 初始化删除线程池和主线程Handler
         deleteExecutor = Executors.newSingleThreadExecutor();
@@ -246,25 +261,255 @@ public class HomeFragment extends Fragment {
         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
             @Override
             public boolean onQueryTextSubmit(String query) {
-                // 提交搜索（可选）
                 return false;
             }
 
             @Override
             public boolean onQueryTextChange(String newText) {
-                // 实时搜索
                 currentSearchQuery = newText;
                 applyFilterAndSort();
                 return true;
             }
         });
         
-        // 清除搜索时恢复列表
         searchView.setOnCloseListener(() -> {
             currentSearchQuery = "";
             applyFilterAndSort();
             return false;
         });
+    }
+    
+    /**
+     * 设置顶部图标按钮：搜索、排序、筛选
+     */
+    private void setupIconButtons() {
+        // 搜索按钮：弹出搜索对话框
+        if (btnSearch != null) {
+            btnSearch.setOnClickListener(v -> showSearchDialog());
+        }
+        // 排序按钮：弹出底部排序菜单
+        if (btnSort != null) {
+            btnSort.setOnClickListener(v -> showSortBottomSheet());
+        }
+        // 筛选/设置按钮：弹出底部筛选菜单
+        if (btnFilter != null) {
+            btnFilter.setOnClickListener(v -> showFilterBottomSheet());
+        }
+    }
+
+    /** 弹出搜索对话框 */
+    private void showSearchDialog() {
+        if (!isAdded() || getContext() == null) return;
+        android.widget.EditText editText = new android.widget.EditText(getContext());
+        editText.setHint("搜索视频...");
+        editText.setText(currentSearchQuery);
+        editText.setSingleLine(true);
+        editText.setPadding(48, 24, 48, 24);
+        editText.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                currentSearchQuery = s.toString();
+                applyFilterAndSort();
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+        new AlertDialog.Builder(getContext())
+            .setTitle("搜索视频")
+            .setView(editText)
+            .setPositiveButton("搜索", null)
+            .setNegativeButton("清除", (d, w) -> {
+                currentSearchQuery = "";
+                applyFilterAndSort();
+            })
+            .show();
+        editText.requestFocus();
+        editText.post(() -> {
+            android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) getContext()
+                    .getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(editText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        });
+    }
+
+    /** 弹出底部排序菜单（仿微信风格） */
+    private void showSortBottomSheet() {
+        if (!isAdded() || getContext() == null) return;
+        android.app.Dialog dialog = new android.app.Dialog(getContext(), R.style.BottomSheetDialogStyle);
+        LinearLayout container = new LinearLayout(getContext());
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setBackgroundResource(R.drawable.bottom_sheet_bg);
+        int dp16 = (int)(16 * getResources().getDisplayMetrics().density);
+        int dp8  = (int)(8  * getResources().getDisplayMetrics().density);
+        container.setPadding(0, dp8, 0, dp16);
+
+        // 标题
+        TextView title = new TextView(getContext());
+        title.setText("排序方式");
+        title.setTextSize(15);
+        title.setTextColor(0xFF999999);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp16, 0, dp8);
+        container.addView(title);
+
+        // 分隔线
+        View divider = new View(getContext());
+        divider.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+        divider.setBackgroundColor(0xFFEEEEEE);
+        container.addView(divider);
+
+        String[] labels = {"按时间：最新优先", "按时间：最早优先", "按大小：从大到小", "按大小：从小到大"};
+        boolean[] states = {
+            currentSort == SortType.TIME && timeSortDescending,
+            currentSort == SortType.TIME && !timeSortDescending,
+            currentSort == SortType.SIZE && sizeSortDescending,
+            currentSort == SortType.SIZE && !sizeSortDescending
+        };
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            TextView item = new TextView(getContext());
+            item.setText(states[i] ? "✓  " + labels[i] : "    " + labels[i]);
+            item.setTextSize(16);
+            item.setTextColor(states[i] ? 0xFFFF6B35 : 0xFF333333);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(0, dp16, 0, dp16);
+            item.setClickable(true);
+            item.setFocusable(true);
+            item.setBackgroundResource(android.R.drawable.list_selector_background);
+            item.setOnClickListener(v -> {
+                switch (idx) {
+                    case 0: currentSort = SortType.TIME; timeSortDescending = true; break;
+                    case 1: currentSort = SortType.TIME; timeSortDescending = false; break;
+                    case 2: currentSort = SortType.SIZE; sizeSortDescending = true; break;
+                    case 3: currentSort = SortType.SIZE; sizeSortDescending = false; break;
+                }
+                applyFilterAndSort();
+                dialog.dismiss();
+            });
+            container.addView(item);
+            if (i < labels.length - 1) {
+                View sep = new View(getContext());
+                sep.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+                sep.setBackgroundColor(0xFFEEEEEE);
+                container.addView(sep);
+            }
+        }
+
+        // 取消按钮
+        View cancelDiv = new View(getContext());
+        cancelDiv.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp8));
+        cancelDiv.setBackgroundColor(0xFFF5F5F5);
+        container.addView(cancelDiv);
+        TextView cancel = new TextView(getContext());
+        cancel.setText("取消");
+        cancel.setTextSize(16);
+        cancel.setTextColor(0xFF333333);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(0, dp16, 0, dp16);
+        cancel.setClickable(true);
+        cancel.setFocusable(true);
+        cancel.setBackgroundResource(android.R.drawable.list_selector_background);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        container.addView(cancel);
+
+        dialog.setContentView(container);
+        android.view.Window win = dialog.getWindow();
+        if (win != null) {
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+            win.setGravity(Gravity.BOTTOM);
+        }
+        dialog.show();
+    }
+
+    /** 弹出底部筛选菜单（已看/未看/智能筛选/清除待删） */
+    private void showFilterBottomSheet() {
+        if (!isAdded() || getContext() == null) return;
+        android.app.Dialog dialog = new android.app.Dialog(getContext(), R.style.BottomSheetDialogStyle);
+        LinearLayout container = new LinearLayout(getContext());
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setBackgroundResource(R.drawable.bottom_sheet_bg);
+        int dp16 = (int)(16 * getResources().getDisplayMetrics().density);
+        int dp8  = (int)(8  * getResources().getDisplayMetrics().density);
+        container.setPadding(0, dp8, 0, dp16);
+
+        // 标题
+        TextView title = new TextView(getContext());
+        title.setText("筛选与操作");
+        title.setTextSize(15);
+        title.setTextColor(0xFF999999);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp16, 0, dp8);
+        container.addView(title);
+        View divider0 = new View(getContext());
+        divider0.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+        divider0.setBackgroundColor(0xFFEEEEEE);
+        container.addView(divider0);
+
+        String[] labels   = {"筛选：已看过的视频", "筛选：未看过的视频", "智能筛选...", "清除筛选", "清除全部待删除"};
+        int[]    colors   = {0xFF333333, 0xFF333333, 0xFF333333, 0xFF333333, 0xFFE53935};
+        Runnable[] actions = {
+            () -> { filterByWatchedStatus(true);  showToast("已筛选: 已看过的视频"); },
+            () -> { filterByWatchedStatus(false); showToast("已筛选: 未看过的视频"); },
+            () -> showSmartFilterDialog(),
+            () -> clearFilter(),
+            () -> {
+                int count = pendingDeleteManager.getPendingCount();
+                if (count == 0) { showToast("没有待删除的视频"); return; }
+                new AlertDialog.Builder(getContext())
+                    .setTitle("确认删除")
+                    .setMessage("确定要删除所有 " + count + " 个待删除的视频吗？")
+                    .setPositiveButton("删除", (d2, w) -> {
+                        pendingDeleteManager.deleteAllPending();
+                        showToast("正在删除 " + count + " 个视频...");
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
+            }
+        };
+        for (int i = 0; i < labels.length; i++) {
+            final Runnable action = actions[i];
+            TextView item = new TextView(getContext());
+            item.setText(labels[i]);
+            item.setTextSize(16);
+            item.setTextColor(colors[i]);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(0, dp16, 0, dp16);
+            item.setClickable(true);
+            item.setFocusable(true);
+            item.setBackgroundResource(android.R.drawable.list_selector_background);
+            item.setOnClickListener(v -> { action.run(); dialog.dismiss(); });
+            container.addView(item);
+            if (i < labels.length - 1) {
+                View sep = new View(getContext());
+                sep.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+                sep.setBackgroundColor(0xFFEEEEEE);
+                container.addView(sep);
+            }
+        }
+
+        // 取消
+        View cancelDiv = new View(getContext());
+        cancelDiv.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp8));
+        cancelDiv.setBackgroundColor(0xFFF5F5F5);
+        container.addView(cancelDiv);
+        TextView cancel = new TextView(getContext());
+        cancel.setText("取消");
+        cancel.setTextSize(16);
+        cancel.setTextColor(0xFF333333);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(0, dp16, 0, dp16);
+        cancel.setClickable(true);
+        cancel.setFocusable(true);
+        cancel.setBackgroundResource(android.R.drawable.list_selector_background);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        container.addView(cancel);
+
+        dialog.setContentView(container);
+        android.view.Window win = dialog.getWindow();
+        if (win != null) {
+            win.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+            win.setGravity(Gravity.BOTTOM);
+        }
+        dialog.show();
     }
     
     /**
@@ -317,9 +562,7 @@ public class HomeFragment extends Fragment {
             currentPage = 0;
             hasMoreData = true;
             cacheManager.clearCache();
-            if (isAdded() && getContext() != null) {
-                Toast.makeText(getContext(), "正在刷新视频列表...", Toast.LENGTH_SHORT).show();
-            }
+            showToast("正在刷新视频列表...");
             loadFiles(true); // 强制重新扫描
         });
     }
@@ -456,17 +699,13 @@ public class HomeFragment extends Fragment {
         // 设置"已看"按钮
         filterWatchedButton.setOnClickListener(v -> {
             filterByWatchedStatus(true);
-            if (isAdded() && getContext() != null) {
-                Toast.makeText(getContext(), "已筛选: 已看过的视频", Toast.LENGTH_SHORT).show();
-            }
+            showToast("已筛选: 已看过的视频");
         });
         
         // 设置"未看"按钮
         filterUnwatchedButton.setOnClickListener(v -> {
             filterByWatchedStatus(false);
-            if (isAdded() && getContext() != null) {
-                Toast.makeText(getContext(), "已筛选: 未看过的视频", Toast.LENGTH_SHORT).show();
-            }
+            showToast("已筛选: 未看过的视频");
         });
     }
 
@@ -486,11 +725,13 @@ public class HomeFragment extends Fragment {
 
     private void setupViewToggleButton() {
         updateViewToggleButton();
-        viewToggleButton.setOnClickListener(v -> {
-            isGridView = !isGridView;
-            updateViewToggleButton();
-            switchLayoutManager();
-        });
+        if (viewToggleButton != null) {
+            viewToggleButton.setOnClickListener(v -> {
+                isGridView = !isGridView;
+                updateViewToggleButton();
+                switchLayoutManager();
+            });
+        }
     }
     
     private void setupSmartFilterButton() {
@@ -506,9 +747,7 @@ public class HomeFragment extends Fragment {
                 int pendingCount = pendingDeleteManager.getPendingCount();
                 
                 if (pendingCount == 0) {
-                    if (isAdded() && getContext() != null) {
-                        Toast.makeText(getContext(), "没有待删除的视频", Toast.LENGTH_SHORT).show();
-                    }
+                    showToast("没有待删除的视频");
                     return;
                 }
                 
@@ -519,9 +758,7 @@ public class HomeFragment extends Fragment {
                     .setPositiveButton("删除", (dialog, which) -> {
                         // 执行批量删除
                         pendingDeleteManager.deleteAllPending();
-                        if (isAdded() && getContext() != null) {
-                            Toast.makeText(getContext(), "正在删除 " + pendingCount + " 个视频...", Toast.LENGTH_SHORT).show();
-                        }
+                        showToast("正在删除 " + pendingCount + " 个视频...");
                     })
                     .setNegativeButton("取消", null)
                     .show();
@@ -578,9 +815,7 @@ public class HomeFragment extends Fragment {
                     };
                     applySmartFilter(types[which]);
                 }
-                if (isAdded() && getContext() != null) {
-                    Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
-                }
+                showToast("已筛选: " + options[which]);
             })
             .show();
     }
@@ -601,9 +836,7 @@ public class HomeFragment extends Fragment {
                     };
                     applySmartFilter(types[which]);
                 }
-                if (isAdded() && getContext() != null) {
-                    Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
-                }
+                showToast("已筛选: " + options[which]);
             })
             .show();
     }
@@ -617,9 +850,7 @@ public class HomeFragment extends Fragment {
                     applyFilterAndSort();
                 } else {
                     // 显示加载提示
-                    if (isAdded() && getContext() != null) {
-                        Toast.makeText(getContext(), "正在分析视频时长...", Toast.LENGTH_LONG).show();
-                    }
+                    showToastLong("正在分析视频时长...");
                     
                     SmartFilterHelper.FilterType[] types = {
                         null,
@@ -647,11 +878,7 @@ public class HomeFragment extends Fragment {
                             loadPageData();
                             
                             updateEmptyView();
-                            if (isAdded() && getContext() != null) {
-                                Toast.makeText(getContext(), 
-                                    "已筛选: " + options[selectedIndex] + " (" + filtered.size() + "个)", 
-                                    Toast.LENGTH_SHORT).show();
-                            }
+                            showToast("已筛选: " + options[selectedIndex] + " (" + filtered.size() + "个)");
                         });
                     }).start();
                 }
@@ -712,9 +939,7 @@ public class HomeFragment extends Fragment {
                     // 筛选已看过的视频
                     filterByWatchedStatus(true);
                 }
-                if (isAdded() && getContext() != null) {
-                    Toast.makeText(getContext(), "已筛选: " + options[which], Toast.LENGTH_SHORT).show();
-                }
+                showToast("已筛选: " + options[which]);
             })
             .show();
     }
@@ -814,14 +1039,12 @@ public class HomeFragment extends Fragment {
                 switch (which) {
                     case 0: // 收藏
                         boolean nowFav = favMgr.toggleFavorite(path);
-                        if (isAdded() && getContext() != null)
-                            Toast.makeText(getContext(), nowFav ? "已收藏" : "已取消收藏", Toast.LENGTH_SHORT).show();
+                        showToast(nowFav ? "已收藏" : "已取消收藏");
                         adapter.notifyDataSetChanged();
                         break;
                     case 1: // 待删除
                         boolean nowPending = pendingDeleteManager.togglePendingDelete(path);
-                        if (isAdded() && getContext() != null)
-                            Toast.makeText(getContext(), nowPending ? "已标记待删除" : "已取消待删除", Toast.LENGTH_SHORT).show();
+                        showToast(nowPending ? "已标记待删除" : "已取消待删除");
                         adapter.notifyDataSetChanged();
                         break;
                     case 2: // 分享
@@ -833,8 +1056,7 @@ public class HomeFragment extends Fragment {
                                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                             startActivity(Intent.createChooser(shareIntent, "分享视频"));
                         } catch (Exception e) {
-                            if (isAdded() && getContext() != null)
-                                Toast.makeText(getContext(), "分享失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            showToast("分享失败: " + e.getMessage());
                         }
                         break;
                     case 3: // 信息
@@ -857,11 +1079,27 @@ public class HomeFragment extends Fragment {
             .show();
     }
 
+    /**
+     * 安全显示 Toast：使用 ApplicationContext，避免 Fragment detach 后 getContext() 返回 null 引发 NPE。
+     * 替代所有 Toast.makeText(getContext(), ...) 的调用。
+     */
+    private void showToast(String message) {
+        Context ctx = isAdded() ? getContext() : null;
+        if (ctx != null) {
+            Toast.makeText(ctx.getApplicationContext(), message, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showToastLong(String message) {
+        Context ctx = isAdded() ? getContext() : null;
+        if (ctx != null) {
+            Toast.makeText(ctx.getApplicationContext(), message, Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void clearFilter() {
         applyFilterAndSort();
-        if (isAdded() && getContext() != null) {
-            Toast.makeText(getContext(), "已清除筛选", Toast.LENGTH_SHORT).show();
-        }
+        showToast("已清除筛选");
     }
     
     private void updateEmptyView() {
@@ -875,12 +1113,8 @@ public class HomeFragment extends Fragment {
     }
 
     private void updateViewToggleButton() {
-        if (isGridView) {
-            // 当前是网格视图，点击后切换到列表视图
-            viewToggleButton.setText("列表");
-        } else {
-            // 当前是列表视图，点击后切换到网格视图
-            viewToggleButton.setText("网格");
+        if (viewToggleButton instanceof TextView) {
+            ((TextView) viewToggleButton).setText(isGridView ? "☰" : "⊞");
         }
     }
 
@@ -1022,11 +1256,12 @@ public class HomeFragment extends Fragment {
     }
     
     /**
-     * 加载一页数据（首次加载）
+     * 加载一页数据（首次加载）。首页用 FIRST_PAGE_SIZE，后续用 PAGE_SIZE。
      */
     private void loadPageData() {
-        int startIndex = currentPage * PAGE_SIZE;
-        int endIndex = Math.min(startIndex + PAGE_SIZE, filteredFiles.size());
+        int pageSize = (currentPage == 0) ? FIRST_PAGE_SIZE : PAGE_SIZE;
+        int startIndex = (currentPage == 0) ? 0 : FIRST_PAGE_SIZE + (currentPage - 1) * PAGE_SIZE;
+        int endIndex = Math.min(startIndex + pageSize, filteredFiles.size());
         
         if (startIndex >= filteredFiles.size()) {
             hasMoreData = false;
@@ -1055,16 +1290,15 @@ public class HomeFragment extends Fragment {
         
         isLoading = true;
         
-        // 显示加载提示
         if (loadingMoreView != null) {
             loadingMoreView.setVisibility(View.VISIBLE);
         }
         
         Log.d(TAG, "开始加载更多数据...");
         
-        // 在后台线程处理以避免卡顿
         new Thread(() -> {
-            int startIndex = currentPage * PAGE_SIZE;
+            // 计算本次加载的起始/结束位置（与 loadPageData 对齐）
+            int startIndex = (currentPage == 0) ? 0 : FIRST_PAGE_SIZE + (currentPage - 1) * PAGE_SIZE;
             int endIndex = Math.min(startIndex + PAGE_SIZE, filteredFiles.size());
             
             if (startIndex >= filteredFiles.size()) {
@@ -1096,8 +1330,8 @@ public class HomeFragment extends Fragment {
                 Log.d(TAG, "加载更多完成，当前显示 " + displayedFiles.size() + 
                     "/" + filteredFiles.size() + " 个文件");
                 
-                if (!hasMoreData && isAdded() && getContext() != null) {
-                    Toast.makeText(getContext(), "已加载全部视频", Toast.LENGTH_SHORT).show();
+                if (!hasMoreData) {
+                    showToast("已加载全部视频");
                 }
             });
         }).start();
@@ -1137,11 +1371,7 @@ public class HomeFragment extends Fragment {
         // 检查是否有删除权限
         if (!PermissionManager.hasManageStoragePermission()) {
             Log.w(TAG, "deleteSelectedFiles: 没有 MANAGE_EXTERNAL_STORAGE 权限");
-            if (isAdded() && getContext() != null) {
-                Toast.makeText(getContext(), 
-                    "需要\"管理所有文件\"权限才能删除文件", 
-                    Toast.LENGTH_LONG).show();
-            }
+            showToastLong("需要\"管理所有文件\"权限才能删除文件");
             PermissionManager.requestManageStoragePermission(getActivity());
             return;
         }
@@ -1153,11 +1383,7 @@ public class HomeFragment extends Fragment {
         // 检查executor是否有效
         if (deleteExecutor == null || deleteExecutor.isShutdown() || deleteExecutor.isTerminated()) {
             Log.e("HomeFragment", "deleteSelectedFiles: 删除线程池无效或已关闭");
-            mainHandler.post(() -> {
-                if (isAdded() && getContext() != null) {
-                    Toast.makeText(getContext(), "删除服务不可用", Toast.LENGTH_SHORT).show();
-                }
-            });
+            mainHandler.post(() -> showToast("删除服务不可用"));
             return;
         }
         
@@ -1258,18 +1484,12 @@ public class HomeFragment extends Fragment {
                 loadFiles();
                 
                 // 显示删除结果
-                if (isAdded() && getContext() != null) {
                 if (finalFailCount == 0) {
-                    Toast.makeText(getContext(), 
-                        getString(R.string.delete_success) + " (" + finalSuccessCount + ")", 
-                        Toast.LENGTH_SHORT).show();
+                    showToast(getString(R.string.delete_success) + " (" + finalSuccessCount + ")");
                 } else {
-                    Toast.makeText(getContext(), 
-                        getString(R.string.delete_success) + ": " + finalSuccessCount + 
-                        ", " + getString(R.string.delete_failed) + ": " + finalFailCount, 
-                        Toast.LENGTH_LONG).show();
+                    showToastLong(getString(R.string.delete_success) + ": " + finalSuccessCount + 
+                        ", " + getString(R.string.delete_failed) + ": " + finalFailCount);
                 }
-                } // end isAdded check
             });
         });
     }
@@ -1336,9 +1556,7 @@ public class HomeFragment extends Fragment {
                                 }
                             } catch (Exception e) {
                                 Log.e(TAG, "deleteFileUsingMediaStore: 无法启动授权对话框", e);
-                                if (isAdded() && getContext() != null) {
-                                    Toast.makeText(getContext(), "删除失败：需要用户授权", Toast.LENGTH_LONG).show();
-                                }
+                                showToastLong("删除失败：需要用户授权");
                             }
                         });
                     }

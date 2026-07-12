@@ -40,6 +40,7 @@ public class FolderFragment extends Fragment {
     private RecyclerView folderList;
     private TextView folderCountText;
     private TextView emptyView;
+    private View loadingView;
     private SwipeRefreshLayout swipeRefresh;
     private Button refreshButton;
     private Spinner storageSpinner;
@@ -51,6 +52,11 @@ public class FolderFragment extends Fragment {
     // null = 全部；否则只显示该存储设备下的文件夹
     @Nullable private File currentStorageFilter = null;
 
+    // 内存缓存：避免每次切换Tab都重新扫盘
+    private static List<FolderItem> cachedFolders = null;
+    private static File cachedStorageFilter = null;  // 缓存对应的存储筛选
+    private boolean isLoading = false;
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
@@ -60,6 +66,7 @@ public class FolderFragment extends Fragment {
         folderList = view.findViewById(R.id.folder_list);
         folderCountText = view.findViewById(R.id.folder_count);
         emptyView = view.findViewById(R.id.empty_view);
+        loadingView = view.findViewById(R.id.loading_view);
         swipeRefresh = view.findViewById(R.id.swipe_refresh);
         refreshButton = view.findViewById(R.id.refresh_button);
         storageSpinner = view.findViewById(R.id.storage_spinner);
@@ -68,10 +75,13 @@ public class FolderFragment extends Fragment {
         setupSwipeRefresh();
         setupRefreshButton();
         setupStorageSpinner();
-        // setupStorageSpinner 会异步触发 loadFolders（通过 Spinner 的 onItemSelected 选中第0项）；
-        // 但 onItemSelected 只在 currentStorageFilter 真正变化时才调用 loadFolders，
-        // 首次设置 adapter 后如果当前 filter 已是 null（"全部"）也不会触发，故此处兜底触发一次。
-        loadFolders();
+
+        // 优先展示缓存，后台异步检查是否需要刷新
+        if (cachedFolders != null && java.util.Objects.equals(cachedStorageFilter, currentStorageFilter)) {
+            showCachedFolders();
+        } else {
+            loadFolders();
+        }
 
         return view;
     }
@@ -86,11 +96,18 @@ public class FolderFragment extends Fragment {
     }
 
     private void setupSwipeRefresh() {
-        swipeRefresh.setOnRefreshListener(this::loadFolders);
+        swipeRefresh.setOnRefreshListener(() -> {
+            // 下拉刷新时清除缓存，强制重新扫描
+            clearCache();
+            loadFolders();
+        });
     }
 
     private void setupRefreshButton() {
-        refreshButton.setOnClickListener(v -> loadFolders());
+        refreshButton.setOnClickListener(v -> {
+            clearCache();
+            loadFolders();
+        });
     }
 
     /**
@@ -140,6 +157,7 @@ public class FolderFragment extends Fragment {
                         if (!java.util.Objects.equals(newFilter, currentStorageFilter)) {
                             currentStorageFilter = newFilter;
                             Log.d(TAG, "切换存储筛选: " + (newFilter == null ? "全部" : newFilter.getAbsolutePath()));
+                            clearCache();
                             loadFolders();
                         }
                     }
@@ -149,29 +167,48 @@ public class FolderFragment extends Fragment {
         }).start();
     }
 
+    /** 直接展示内存缓存中的文件夹列表，不触发扫描 */
+    private void showCachedFolders() {
+        folders.clear();
+        folders.addAll(cachedFolders);
+        adapter.updateFolders(new ArrayList<>(cachedFolders));
+        updateEmptyView();
+        updateFolderCount();
+        Log.d(TAG, "使用缓存展示 " + folders.size() + " 个文件夹");
+    }
+
     /**
-     * 加载文件夹列表
+     * 加载文件夹列表（带进度显示 + 内存缓存）
      */
     private void loadFolders() {
+        if (isLoading) return;
+        isLoading = true;
         Log.d(TAG, "开始扫描视频文件夹...");
+
+        // 显示加载中视图（如果列表为空）
+        if (folders.isEmpty() && loadingView != null) {
+            loadingView.setVisibility(android.view.View.VISIBLE);
+            emptyView.setVisibility(android.view.View.GONE);
+        }
 
         // 在后台线程扫描
         android.content.Context appCtx = isAdded() && getContext() != null
                 ? getContext().getApplicationContext() : null;
-        if (appCtx == null) return;
+        if (appCtx == null) { isLoading = false; return; }
+
+        final File filterSnapshot = currentStorageFilter;
 
         new Thread(() -> {
             Map<String, FolderItem> folderMap = new HashMap<>();
 
-            // 根据用户选择决定扫描范围
             List<File> scanTargets;
-            if (currentStorageFilter != null) {
-                scanTargets = Arrays.asList(currentStorageFilter);
+            if (filterSnapshot != null) {
+                scanTargets = Arrays.asList(filterSnapshot);
             } else {
                 scanTargets = FileUtils.getStorageDirectories(appCtx);
             }
             Log.d(TAG, "扫描 " + scanTargets.size() + " 个存储设备，filter="
-                    + (currentStorageFilter == null ? "全部" : currentStorageFilter.getAbsolutePath()));
+                    + (filterSnapshot == null ? "全部" : filterSnapshot.getAbsolutePath()));
 
             for (File storageDir : scanTargets) {
                 if (storageDir != null && storageDir.exists()) {
@@ -180,38 +217,44 @@ public class FolderFragment extends Fragment {
                 }
             }
 
-            // 转换为列表
-            List<FolderItem> folderList = new ArrayList<>(folderMap.values());
+            List<FolderItem> folderResult = new ArrayList<>(folderMap.values());
+            folderResult.sort((f1, f2) -> Integer.compare(f2.getVideoCount(), f1.getVideoCount()));
 
-            // 按视频数量排序
-            folderList.sort((f1, f2) -> Integer.compare(f2.getVideoCount(), f1.getVideoCount()));
-
-            // 统计总视频数量
             int totalVideos = 0;
-            for (FolderItem folder : folderList) {
-                totalVideos += folder.getVideoCount();
-            }
-            
+            for (FolderItem folder : folderResult) totalVideos += folder.getVideoCount();
             final int finalTotalVideos = totalVideos;
 
-            // 更新UI
+            // 更新内存缓存
+            cachedFolders = new ArrayList<>(folderResult);
+            cachedStorageFilter = filterSnapshot;
+
             if (isAdded() && getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
                     if (!isAdded()) return;
-                    Log.d(TAG, "更新UI前 - folders.size: " + folders.size() + ", adapter不为空: " + (adapter != null));
+                    if (loadingView != null) loadingView.setVisibility(android.view.View.GONE);
                     folders.clear();
-                    folders.addAll(folderList);
-                    Log.d(TAG, "更新UI中 - folders.size: " + folders.size() + ", folderList.size: " + folderList.size());
-                    adapter.updateFolders(folderList);
+                    folders.addAll(folderResult);
+                    adapter.updateFolders(folderResult);
                     updateEmptyView();
                     updateFolderCount();
+                    isLoading = false;
                     if (swipeRefresh != null && swipeRefresh.isRefreshing()) {
                         swipeRefresh.setRefreshing(false);
                     }
                     Log.d(TAG, "找到 " + folders.size() + " 个文件夹，共 " + finalTotalVideos + " 个视频");
                 });
+            } else {
+                isLoading = false;
             }
         }).start();
+    }
+
+    /**
+     * 清除文件夹缓存（在需要强制刷新时调用，例如文件增删后）
+     */
+    public static void clearCache() {
+        cachedFolders = null;
+        cachedStorageFilter = null;
     }
 
     /**
@@ -308,9 +351,10 @@ public class FolderFragment extends Fragment {
     }
 
     /**
-     * 刷新文件夹列表（外部调用）
+     * 刷新文件夹列表（外部调用）。外部调用时清除缓存强制重扫。
      */
     public void refreshFolders() {
+        clearCache();
         loadFolders();
     }
 }
