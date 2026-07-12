@@ -61,6 +61,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:theme="@style/Theme.Anxiong">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -106,17 +107,20 @@
         <activity
             android:name=".SettingsActivity"
             android:theme="@style/Theme.Anxiong"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="false" />
 
         <activity
             android:name=".AllVideosActivity"
             android:theme="@style/Theme.Anxiong"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:label="@string/all_videos"
             android:exported="false" />
 
         <activity
             android:name=".FolderDetailActivity"
             android:theme="@style/Theme.Anxiong"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="false" />
 
         <!-- FileProvider 配置 - 实现文件共享功能 -->

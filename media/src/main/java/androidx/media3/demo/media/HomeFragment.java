@@ -654,73 +654,67 @@ public class HomeFragment extends Fragment {
     }
     
     private void updateSelectionUI() {
+        if (!isAdded() || getView() == null || adapter == null) return;
         if (adapter.isSelectionMode()) {
-            toolbarLayout.setVisibility(View.GONE);
-            selectionToolbarLayout.setVisibility(View.VISIBLE);
+            if (toolbarLayout != null) toolbarLayout.setVisibility(View.GONE);
+            if (selectionToolbarLayout != null) selectionToolbarLayout.setVisibility(View.VISIBLE);
             int count = adapter.getSelectedCount();
             int total = adapter.getItemCount();
-            selectedCountText.setText(getString(R.string.selected_count, count));
-            deleteSelectedButton.setEnabled(count > 0);
-            
-            // 根据选中状态更新"全选"按钮文本
-            if (count == total && total > 0) {
-                selectAllButton.setText(R.string.deselect_all);
-            } else {
-                selectAllButton.setText(R.string.select_all);
+            if (selectedCountText != null) selectedCountText.setText(getString(R.string.selected_count, count));
+            if (deleteSelectedButton != null) deleteSelectedButton.setEnabled(count > 0);
+            if (selectAllButton != null) {
+                if (count == total && total > 0) {
+                    selectAllButton.setText(R.string.deselect_all);
+                } else {
+                    selectAllButton.setText(R.string.select_all);
+                }
             }
         } else {
-            toolbarLayout.setVisibility(View.VISIBLE);
-            selectionToolbarLayout.setVisibility(View.GONE);
+            if (toolbarLayout != null) toolbarLayout.setVisibility(View.VISIBLE);
+            if (selectionToolbarLayout != null) selectionToolbarLayout.setVisibility(View.GONE);
         }
     }
 
 
     private void setupSortButtons() {
-        // 设置时间排序按钮
-        updateSortTimeButtonIcon();
-        sortTimeButton.setOnClickListener(v -> {
-            currentSort = SortType.TIME;
-            timeSortDescending = !timeSortDescending;
-            updateSortTimeButtonIcon();
-            applyFilterAndSort();
-        });
-
-        // 设置大小排序按钮
-        updateSortSizeButtonIcon();
-        sortSizeButton.setOnClickListener(v -> {
-            currentSort = SortType.SIZE;
-            sizeSortDescending = !sizeSortDescending;
-            updateSortSizeButtonIcon();
-            applyFilterAndSort();
-        });
+        // hidden buttons, no-op（排序通过顶部图标按钮弹出菜单）
+        if (sortTimeButton != null) {
+            sortTimeButton.setOnClickListener(v -> {
+                currentSort = SortType.TIME;
+                timeSortDescending = !timeSortDescending;
+                applyFilterAndSort();
+            });
+        }
+        if (sortSizeButton != null) {
+            sortSizeButton.setOnClickListener(v -> {
+                currentSort = SortType.SIZE;
+                sizeSortDescending = !sizeSortDescending;
+                applyFilterAndSort();
+            });
+        }
     }
     
     private void setupWatchedFilterButtons() {
-        // 设置"已看"按钮
-        filterWatchedButton.setOnClickListener(v -> {
-            filterByWatchedStatus(true);
-            showToast("已筛选: 已看过的视频");
-        });
-        
-        // 设置"未看"按钮
-        filterUnwatchedButton.setOnClickListener(v -> {
-            filterByWatchedStatus(false);
-            showToast("已筛选: 未看过的视频");
-        });
+        if (filterWatchedButton != null) {
+            filterWatchedButton.setOnClickListener(v -> {
+                filterByWatchedStatus(true);
+                showToast("已筛选: 已看过的视频");
+            });
+        }
+        if (filterUnwatchedButton != null) {
+            filterUnwatchedButton.setOnClickListener(v -> {
+                filterByWatchedStatus(false);
+                showToast("已筛选: 未看过的视频");
+            });
+        }
     }
 
     private void updateSortTimeButtonIcon() {
-        int iconRes = timeSortDescending 
-            ? android.R.drawable.arrow_down_float 
-            : android.R.drawable.arrow_up_float;
-        sortTimeButton.setCompoundDrawablesWithIntrinsicBounds(0, 0, iconRes, 0);
+        // buttons are hidden, no-op
     }
 
     private void updateSortSizeButtonIcon() {
-        int iconRes = sizeSortDescending 
-            ? android.R.drawable.arrow_down_float 
-            : android.R.drawable.arrow_up_float;
-        sortSizeButton.setCompoundDrawablesWithIntrinsicBounds(0, 0, iconRes, 0);
+        // buttons are hidden, no-op
     }
 
     private void setupViewToggleButton() {

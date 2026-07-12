@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 平板尺寸适配：文字、间距、列数等按大屏放大 -->
+<resources>
+    <!-- 首页视频网格：平板默认3列 -->
+    <integer name="grid_column_count">3</integer>
+    <!-- 列表项缩略图尺寸 -->
+    <dimen name="thumbnail_size">120dp</dimen>
+    <!-- 底部导航高度（平板使用侧边栏，此值仅作备用） -->
+    <dimen name="bottom_nav_height">0dp</dimen>
+</resources>

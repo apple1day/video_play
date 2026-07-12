@@ -1,5 +1,6 @@
 package androidx.media3.demo.media;
 
+import android.content.res.Configuration;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
@@ -49,10 +50,21 @@ public class MainActivity extends AppCompatActivity {
             }
         }).attach();
 
+        // 平板：TabLayout 横向不支持 scroll，需要禁止 ViewPager2 的用户滑动
+        // 避免侧边导航 + 横向滑动冲突导致崩溃
+        if (isTablet()) {
+            viewPager.setUserInputEnabled(false);
+        }
+
         // 请求权限
         if (!PermissionHelper.hasMediaPermissions(this)) {
             PermissionHelper.requestMediaPermissions(this);
         }
+    }
+
+    /** 判断是否为平板/大屏（sw >= 600dp） */
+    private boolean isTablet() {
+        return getResources().getConfiguration().smallestScreenWidthDp >= 600;
     }
 
     @Override

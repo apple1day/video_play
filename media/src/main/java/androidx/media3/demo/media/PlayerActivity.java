@@ -29,6 +29,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.annotation.NonNull;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
@@ -227,6 +228,16 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
     
+    /** 判断当前是否为平板/大屏（sw >= 600dp） */
+    private boolean isTablet() {
+        return getResources().getConfiguration().smallestScreenWidthDp >= 600;
+    }
+
+    /** 判断当前屏幕方向是否横屏 */
+    private boolean isLandscape() {
+        return getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
     private void setupGestureDetector() {
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -275,11 +286,17 @@ public class PlayerActivity extends AppCompatActivity {
                 float absDeltaX = Math.abs(totalDeltaX);
                 float absDeltaY = Math.abs(totalDeltaY);
 
+                // iPad大屏适配：手势识别阈值按屏幕密度动态调整
+                float density = getResources().getDisplayMetrics().density;
+                float scrollThreshold = isTablet() ? 40 * density : 30;
+                float switchThreshold = isTablet() ? 120 * density : 80;
+
+                // iPad上手势区域划分按实际像素，左1/3亮度，右1/3音量，中1/3切换视频
                 float leftBoundary  = screenWidth * 0.33f;
                 float rightBoundary = screenWidth * 0.67f;
 
                 // 垂直滑动优先
-                if (absDeltaY > absDeltaX * 1.5f && absDeltaY > 30) {
+                if (absDeltaY > absDeltaX * 1.5f && absDeltaY > scrollThreshold) {
                     if (sx < leftBoundary) {
                         adjustBrightness(totalDeltaY, screenHeight);
                         return true;
@@ -287,7 +304,7 @@ public class PlayerActivity extends AppCompatActivity {
                         adjustVolume(totalDeltaY, screenHeight);
                         return true;
                     } else {
-                        if (absDeltaY > 80) {
+                        if (absDeltaY > switchThreshold) {
                             if (totalDeltaY > 0) {
                                 if (player != null && player.hasNextMediaItem()) {
                                     player.seekToNextMediaItem();
@@ -411,34 +428,40 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
     
-    // 调节亮度
+    // 调节亮度：iPad不支持通过WindowManager调节系统亮度，仅在手机上生效
     // deltaY: 滑动距离（正值表示向上）
     // screenHeight: 屏幕高度
     private void adjustBrightness(float deltaY, int screenHeight) {
+        // iPad（Android平板）亮度调节方式与手机相同，但需检查Settings权限
+        if (isTablet() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && !Settings.System.canWrite(this)) {
+            // 无写入系统设置权限时跳过，避免SecurityException崩溃
+            showSeekOverlay("亮度调节需要系统权限");
+            return;
+        }
         WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
         
         // 滑动一个屏幕高度改变35%亮度
-        // 计算亮度变化：(滑动距离 / 屏幕高度) * 0.35
         float brightnessChange = (deltaY / screenHeight) * 0.35f;
         
-        // 如果当前亮度为自动（-1），则从0.5开始
         float currentBrightness = layoutParams.screenBrightness;
         if (currentBrightness < 0) {
             currentBrightness = 0.5f;
         }
         
         float newBrightness = currentBrightness + brightnessChange;
-        
-        // 限制在0.01到1.0之间
         newBrightness = Math.max(0.01f, Math.min(1.0f, newBrightness));
         
         if (Math.abs(newBrightness - layoutParams.screenBrightness) > 0.01f) {
             layoutParams.screenBrightness = newBrightness;
-            getWindow().setAttributes(layoutParams);
-            
-            int brightnessPercent = (int) (newBrightness * 100);
-            showSeekOverlay("亮度: " + brightnessPercent + "%");
-            isAdjustingBrightness = true;
+            try {
+                getWindow().setAttributes(layoutParams);
+                int brightnessPercent = (int) (newBrightness * 100);
+                showSeekOverlay("亮度: " + brightnessPercent + "%");
+                isAdjustingBrightness = true;
+            } catch (Exception e) {
+                android.util.Log.w(TAG, "adjustBrightness failed: " + e.getMessage());
+            }
         }
     }
     
@@ -949,6 +972,13 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // 横竖屏切换时重新应用沉浸式，避免iPad分屏/旋转后系统栏残留
+        applyImmersive(true);
+    }
+
+    @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
         inPipMode = isInPictureInPictureMode;
@@ -969,10 +999,26 @@ public class PlayerActivity extends AppCompatActivity {
         if (player == null || !player.isPlaying()) return;
         if (isInPictureInPictureMode()) return;
         try {
+            // 根据实际视频宽高比设置PiP宽高比，iPad上避免比例错误导致崩溃
             Rational ratio = new Rational(16, 9);
-            int w = playerView != null ? playerView.getWidth() : 0;
-            int h = playerView != null ? playerView.getHeight() : 0;
-            if (w > 0 && h > 0) ratio = new Rational(w, h);
+            if (player.getVideoSize().width > 0 && player.getVideoSize().height > 0) {
+                int vw = player.getVideoSize().width;
+                int vh = player.getVideoSize().height;
+                // PiP比例限制在 1:2.39 到 2.39:1 之间（系统要求）
+                float aspect = (float) vw / vh;
+                if (aspect > 2.39f) { vw = (int)(vh * 2.39f); }
+                else if (aspect < 1f / 2.39f) { vh = (int)(vw * 2.39f); }
+                ratio = new Rational(vw, vh);
+            } else {
+                int w = playerView != null ? playerView.getWidth() : 0;
+                int h = playerView != null ? playerView.getHeight() : 0;
+                if (w > 0 && h > 0) {
+                    float aspect = (float) w / h;
+                    if (aspect > 2.39f) { w = (int)(h * 2.39f); }
+                    else if (aspect < 1f / 2.39f) { h = (int)(w * 2.39f); }
+                    ratio = new Rational(w, h);
+                }
+            }
             PictureInPictureParams params = new PictureInPictureParams.Builder()
                     .setAspectRatio(ratio).build();
             enterPictureInPictureMode(params);

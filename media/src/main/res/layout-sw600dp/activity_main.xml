@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 平板（sw>=600dp）布局：左侧竖向导航栏 + 右侧内容区 -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:background="#F8F9FA">
+
+    <!-- 左侧竖向 Tab 导航 -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tab_layout"
+        android:layout_width="80dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/bottom_nav_bg"
+        android:elevation="4dp"
+        app:tabMode="fixed"
+        app:tabGravity="fill"
+        app:tabIndicatorHeight="0dp"
+        app:tabIndicatorColor="#FF6B35"
+        app:tabIndicatorFullWidth="false"
+        app:tabTextColor="#999999"
+        app:tabSelectedTextColor="#FF6B35"
+        app:tabTextAppearance="@style/BottomTabTextAppearance"
+        app:tabIconTint="@drawable/tab_icon_color_selector"
+        app:tabRippleColor="@android:color/transparent"
+        app:tabPaddingTop="12dp"
+        app:tabPaddingBottom="12dp"
+        app:tabPaddingStart="0dp"
+        app:tabPaddingEnd="0dp"
+        app:tabInlineLabel="true" />
+
+    <!-- 右侧内容区 -->
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/view_pager"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1" />
+
+</LinearLayout>
