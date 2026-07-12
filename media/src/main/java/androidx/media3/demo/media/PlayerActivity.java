@@ -33,6 +33,7 @@ import androidx.annotation.NonNull;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
+import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -620,9 +621,22 @@ public class PlayerActivity extends AppCompatActivity {
             )
             .build();
 
+        // ── 轨道选择：强制选最高画质 ──────────────────────────────────────────
+        // ExoPlayer 默认 isViewportSizeLimitedByPhysicalDisplaySize=true，
+        // 会根据物理屏幕尺寸降选低分辨率轨道（如 4K 降到 1080p）。
+        // 本地文件播放不需要此限制，清除 viewport 约束确保解码原始全分辨率。
+        // setForceHighestSupportedBitrate(true) 确保多码率轨道选最高码率。
+        TrackSelectionParameters trackParams = new TrackSelectionParameters.Builder(this)
+            .clearViewportSizeConstraints()  // 禁用屏幕尺寸限制，不降分辨率
+            .setForceHighestSupportedBitrate(true)  // 强制选最高码率
+            .build();
+
         player = new ExoPlayer.Builder(this, renderersFactory)
             .setLoadControl(loadControl)
             .build();
+
+        // 在 build() 之后设置轨道选择参数（Builder 不直接支持 setTrackSelectionParameters）
+        player.setTrackSelectionParameters(trackParams);
 
         // VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING 会放大填充，导致边缘裁剪
         // 使用 VIDEO_SCALING_MODE_SCALE_TO_FIT（默认），保持宽高比，不拉伸
