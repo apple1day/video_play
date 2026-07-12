@@ -1227,11 +1227,14 @@ public class HomeFragment extends Fragment {
                             android.net.Uri collection = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                                 ? MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
                                 : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
-                            getContext().getContentResolver().delete(
-                                collection,
-                                MediaStore.Video.Media.DATA + "=?",
-                                new String[]{file.getAbsolutePath()}
-                            );
+                            android.content.Context ctx = getContext();
+                            if (ctx != null) {
+                                ctx.getContentResolver().delete(
+                                    collection,
+                                    MediaStore.Video.Media.DATA + "=?",
+                                    new String[]{file.getAbsolutePath()}
+                                );
+                            }
                         } catch (Exception e) {
                             Log.w(TAG, "deleteSelectedFiles: 通知MediaStore失败", e);
                         }
@@ -1280,6 +1283,7 @@ public class HomeFragment extends Fragment {
         }
         
         try {
+            if (!isAdded() || getContext() == null) return false;
             ContentResolver resolver = getContext().getContentResolver();
             Uri uri = getMediaStoreUri(file);
             
@@ -1401,6 +1405,7 @@ public class HomeFragment extends Fragment {
         }
         
         try {
+            if (!isAdded() || getContext() == null) return null;
             ContentResolver resolver = getContext().getContentResolver();
             String filePath = file.getAbsolutePath();
             
