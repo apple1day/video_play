@@ -38,6 +38,8 @@ import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.common.Effect;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.effect.Contrast;
+import androidx.media3.effect.HslAdjustment;
 import androidx.media3.ui.PlayerView;
 
 import com.google.common.collect.ImmutableList;
@@ -92,6 +94,10 @@ public class PlayerActivity extends AppCompatActivity {
     private float longPressOriginalSpeed = 1.0f;
     private final android.os.Handler longPressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private static final long LONG_PRESS_TRIGGER_MS = 500; // 触发长按的阈值
+
+    // 画质增强预设
+    private VideoEnhancePreset currentEnhancePreset = VideoEnhancePreset.STANDARD;
+    private static final String PREF_ENHANCE_PRESET = "video_enhance_preset";
 
     // 画中画 / 后台播放
     private boolean inPipMode = false;
@@ -168,6 +174,13 @@ public class PlayerActivity extends AppCompatActivity {
                 ImageButton trackButton = topControlsView.findViewById(R.id.track_button);
                 if (trackButton != null) {
                     trackButton.setOnClickListener(v -> showTrackSheet());
+                }
+
+                // 画质增强按钮
+                android.widget.TextView enhanceButton = topControlsView.findViewById(R.id.enhance_button);
+                if (enhanceButton != null) {
+                    enhanceButton.setOnClickListener(v -> showEnhanceDialog(enhanceButton));
+                    updateEnhanceButtonLabel(enhanceButton);
                 }
 
                 // 锁屏按钮
@@ -484,6 +497,39 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
+    /** 弹出画质增强选择对话框。 */
+    @androidx.annotation.OptIn(markerClass = UnstableApi.class)
+    private void showEnhanceDialog(android.widget.TextView button) {
+        VideoEnhancePreset[] presets = VideoEnhancePreset.values();
+        String[] labels = new String[presets.length];
+        for (int i = 0; i < presets.length; i++) labels[i] = presets[i].label;
+        int currentIndex = currentEnhancePreset.ordinal();
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("画质")
+            .setSingleChoiceItems(labels, currentIndex, (dialog, which) -> {
+                currentEnhancePreset = presets[which];
+                // 持久化用户选择
+                getSharedPreferences("app_prefs", MODE_PRIVATE).edit()
+                    .putInt(PREF_ENHANCE_PRESET, which).apply();
+                // 实时切换 Effect，无需重启 player
+                if (player != null) {
+                    player.setVideoEffects(currentEnhancePreset.buildEffects());
+                }
+                updateEnhanceButtonLabel(button);
+                dialog.dismiss();
+            })
+            .show();
+    }
+
+    private void updateEnhanceButtonLabel(android.widget.TextView button) {
+        if (button == null) return;
+        button.setText(currentEnhancePreset == VideoEnhancePreset.STANDARD
+                ? "画质" : currentEnhancePreset.label);
+        button.setTextColor(currentEnhancePreset == VideoEnhancePreset.STANDARD
+                ? 0xFFFFFFFF : 0xFFFFB300);
+    }
+
     /** 弹出 字幕 / 音轨 / 倍速 选择面板。 */
     private void showTrackSheet() {
         if (player == null) return;
@@ -640,11 +686,16 @@ public class PlayerActivity extends AppCompatActivity {
         // 在 build() 之后设置轨道选择参数（Builder 不直接支持 setTrackSelectionParameters）
         player.setTrackSelectionParameters(trackParams);
 
-        // ── 启用 HDR→SDR Tone Mapping ─────────────────────────────────────────
-        // setVideoEffects() 传入空 list 触发 effects pipeline 创建（PlaybackVideoGraphWrapper），
-        // 之后 ToneMappingVideoRenderer 会在 SDR 屏幕上自动设置 requestOpenGlToneMapping=true。
+        // ── 读取用户画质预设 ──────────────────────────────────────────────────
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        currentEnhancePreset = VideoEnhancePreset.fromOrdinal(
+                prefs.getInt(PREF_ENHANCE_PRESET, VideoEnhancePreset.STANDARD.ordinal()));
+
+        // ── 启用 Effects Pipeline（HDR→SDR Tone Mapping + 画质增强）────────────
+        // setVideoEffects() 触发 PlaybackVideoGraphWrapper 创建；ToneMappingVideoRenderer
+        // 会在 SDR 屏幕上自动注入 OpenGL tone mapping。同时携带用户选中的画质 Effect。
         // 必须在 prepare() 之前调用，否则 effects pipeline 不会初始化。
-        player.setVideoEffects(ImmutableList.<Effect>of());
+        player.setVideoEffects(currentEnhancePreset.buildEffects());
 
         // VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING 会放大填充，导致边缘裁剪
         // 使用 VIDEO_SCALING_MODE_SCALE_TO_FIT（默认），保持宽高比，不拉伸

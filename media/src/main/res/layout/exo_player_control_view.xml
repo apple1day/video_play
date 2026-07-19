@@ -65,6 +65,19 @@
             android:tint="#FFFFFF"
             android:contentDescription="屏幕比例" />
 
+        <!-- 画质增强按钮 -->
+        <TextView
+            android:id="@+id/enhance_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="画质"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:background="@android:color/transparent"
+            android:contentDescription="画质增强" />
+
         <!-- 锁屏按钮 -->
         <ImageButton
             android:id="@+id/lock_button"
