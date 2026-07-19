@@ -45,3 +45,6 @@ project(modulePrefix + 'lib-decoder').projectDir = new File(rootDir, 'libraries/
 
 include modulePrefix + 'lib-extractor'
 project(modulePrefix + 'lib-extractor').projectDir = new File(rootDir, 'libraries/extractor')
+
+include modulePrefix + 'lib-effect'
+project(modulePrefix + 'lib-effect').projectDir = new File(rootDir, 'libraries/effect')

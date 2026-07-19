@@ -35,9 +35,12 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.exoplayer.DefaultLoadControl;
-import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.common.Effect;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.ui.PlayerView;
+
+import com.google.common.collect.ImmutableList;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -605,11 +608,10 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         // ── 解码器配置：优先硬解，fallback 软解 ──────────────────────────────
-        DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
-            // 优先硬解（PREFER_DEVICE_SUPPORTED_DECODERS = 默认）
-            // 硬解失败时自动 fallback 软解，避免黑屏/花屏
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .setEnableDecoderFallback(true);
+        // 使用 ToneMappingRenderersFactory 替代 DefaultRenderersFactory，
+        // 内部用 ToneMappingVideoRenderer 覆盖 createPlaybackVideoGraphWrapper()，
+        // 在 SDR 屏幕上强制启用 OpenGL HDR→SDR tone mapping，解决 HDR 视频发灰问题。
+        ToneMappingRenderersFactory renderersFactory = new ToneMappingRenderersFactory(this);
 
         // ── LoadControl：增大缓冲区，减少卡顿 ────────────────────────────────
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
@@ -637,6 +639,12 @@ public class PlayerActivity extends AppCompatActivity {
 
         // 在 build() 之后设置轨道选择参数（Builder 不直接支持 setTrackSelectionParameters）
         player.setTrackSelectionParameters(trackParams);
+
+        // ── 启用 HDR→SDR Tone Mapping ─────────────────────────────────────────
+        // setVideoEffects() 传入空 list 触发 effects pipeline 创建（PlaybackVideoGraphWrapper），
+        // 之后 ToneMappingVideoRenderer 会在 SDR 屏幕上自动设置 requestOpenGlToneMapping=true。
+        // 必须在 prepare() 之前调用，否则 effects pipeline 不会初始化。
+        player.setVideoEffects(ImmutableList.<Effect>of());
 
         // VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING 会放大填充，导致边缘裁剪
         // 使用 VIDEO_SCALING_MODE_SCALE_TO_FIT（默认），保持宽高比，不拉伸
