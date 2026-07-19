@@ -199,49 +199,33 @@ public class FolderFragment extends Fragment {
         final File filterSnapshot = currentStorageFilter;
 
         new Thread(() -> {
-            Map<String, FolderItem> folderMap = new HashMap<>();
-
             List<File> scanTargets;
             if (filterSnapshot != null) {
                 scanTargets = Arrays.asList(filterSnapshot);
             } else {
                 scanTargets = FileUtils.getStorageDirectories(appCtx);
             }
-            Log.d(TAG, "扫描 " + scanTargets.size() + " 个存储设备，filter="
-                    + (filterSnapshot == null ? "全部" : filterSnapshot.getAbsolutePath()));
 
             for (File storageDir : scanTargets) {
-                if (storageDir != null && storageDir.exists()) {
-                    Log.d(TAG, "扫描存储设备: " + storageDir.getAbsolutePath());
-                    scanDirectory(storageDir, folderMap);
-                }
+                if (storageDir == null || !storageDir.exists()) continue;
+                // 增量扫描：每扫完一个一级子目录就推一次 UI
+                scanDirectoryIncremental(storageDir, filterSnapshot);
             }
 
-            List<FolderItem> folderResult = new ArrayList<>(folderMap.values());
-            folderResult.sort((f1, f2) -> Integer.compare(f2.getVideoCount(), f1.getVideoCount()));
-
-            int totalVideos = 0;
-            for (FolderItem folder : folderResult) totalVideos += folder.getVideoCount();
-            final int finalTotalVideos = totalVideos;
-
-            // 更新内存缓存
-            cachedFolders = new ArrayList<>(folderResult);
-            cachedStorageFilter = filterSnapshot;
-
+            // 扫描完成，更新缓存
             if (isAdded() && getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
                     if (!isAdded()) return;
                     if (loadingView != null) loadingView.setVisibility(android.view.View.GONE);
-                    folders.clear();
-                    folders.addAll(folderResult);
-                    adapter.updateFolders(folderResult);
-                    updateEmptyView();
+                    cachedFolders = new ArrayList<>(folders);
+                    cachedStorageFilter = filterSnapshot;
                     updateFolderCount();
                     isLoading = false;
                     if (swipeRefresh != null && swipeRefresh.isRefreshing()) {
                         swipeRefresh.setRefreshing(false);
                     }
-                    Log.d(TAG, "找到 " + folders.size() + " 个文件夹，共 " + finalTotalVideos + " 个视频");
+                    updateEmptyView();
+                    Log.d(TAG, "扫描完成，共 " + folders.size() + " 个文件夹");
                 });
             } else {
                 isLoading = false;
@@ -258,7 +242,67 @@ public class FolderFragment extends Fragment {
     }
 
     /**
-     * 递归扫描目录
+     * 增量扫描根存储目录下的每个一级子目录，每扫到有视频的文件夹就立即推到 UI。
+     */
+    private void scanDirectoryIncremental(File root, File filterSnapshot) {
+        if (root == null || !root.exists() || !root.canRead()) return;
+        File[] topDirs = root.listFiles(f -> !f.getName().startsWith(".") && !f.getName().equals("Android") && f.isDirectory());
+        if (topDirs == null) {
+            // root 本身直接包含视频文件
+            scanAndPushFolder(root);
+            return;
+        }
+        for (File topDir : topDirs) {
+            scanAndPushFolderRecursive(topDir);
+        }
+        // 扫描 root 层直接包含的视频文件
+        scanAndPushFolder(root);
+    }
+
+    private void scanAndPushFolderRecursive(File dir) {
+        if (dir == null || !dir.exists() || !dir.canRead()) return;
+        scanAndPushFolder(dir);
+        File[] subDirs = dir.listFiles(f -> !f.getName().startsWith(".") && f.isDirectory());
+        if (subDirs != null) {
+            for (File sub : subDirs) scanAndPushFolderRecursive(sub);
+        }
+    }
+
+    /** 扫描单个目录（不递归），若有视频立即推到 UI。 */
+    private void scanAndPushFolder(File dir) {
+        if (dir == null || !dir.exists() || !dir.canRead()) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        int videoCount = 0;
+        long totalSize = 0;
+        for (File f : files) {
+            if (f.isFile() && isVideoFile(f) && !FileUtils.shouldFilterFile(f)) {
+                videoCount++;
+                totalSize += f.length();
+            }
+        }
+        if (videoCount == 0) return;
+
+        final FolderItem newItem = new FolderItem(dir, videoCount, totalSize);
+        if (isAdded() && getActivity() != null) {
+            getActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
+                // 检查是否已有此文件夹（避免重复）
+                String path = dir.getAbsolutePath();
+                for (int i = 0; i < folders.size(); i++) {
+                    if (folders.get(i).getFolderPath().equals(path)) return;
+                }
+                folders.add(newItem);
+                adapter.notifyItemInserted(folders.size() - 1);
+                if (loadingView != null) loadingView.setVisibility(android.view.View.GONE);
+                updateEmptyView();
+                updateFolderCount();
+            });
+        }
+    }
+
+    /**
+     * 递归扫描目录（保留原方法，供未来使用）
      */
     private void scanDirectory(File dir, Map<String, FolderItem> folderMap) {
         if (dir == null || !dir.exists() || !dir.isDirectory() || !dir.canRead()) {

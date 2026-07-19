@@ -87,6 +87,7 @@ public class HomeFragment extends Fragment {
     private SortType currentSort = SortType.TIME;
     private boolean timeSortDescending = true; // 默认从新到旧（降序）
     private boolean sizeSortDescending = true; // 默认从大到小（降序）
+    private boolean userHasSelectedSort = false; // 用户是否手动选择过排序（false=不排序，保持扫描顺序）
     private boolean isGridView = false; // 默认列表视图
     private ExecutorService deleteExecutor;
     private Handler mainHandler;
@@ -1148,10 +1149,11 @@ public class HomeFragment extends Fragment {
      * 旋转屏 / 切 Tab 也不会重复扫盘。
      */
     private void loadFiles(boolean forceRefresh) {
-        // 重置分页状态
+        // 重置状态
         currentPage = 0;
         hasMoreData = true;
         displayedFiles.clear();
+        if (forceRefresh) userHasSelectedSort = false; // 下拉刷新重置排序标记
 
         if (videoListViewModel == null) {
             videoListViewModel = new androidx.lifecycle.ViewModelProvider(this)
@@ -1186,12 +1188,8 @@ public class HomeFragment extends Fragment {
 
         videoListViewModel.incrementalBatch.observe(getViewLifecycleOwner(), batch -> {
             if (batch == null || batch.isEmpty()) return;
-            // 增量阶段只更新加载提示，不触发排序刷新
-            if (loadingView != null && loadingTextView != null) {
-                int found = videoListViewModel.allVideos.getValue() != null
-                        ? videoListViewModel.allVideos.getValue().size() : 0;
-                loadingTextView.setText("正在加载视频... 已找到 " + (found + batch.size()) + " 个");
-            }
+            // 增量直接追加到列表末尾展示，避免数字跳来跳去
+            appendVideoBatch(batch);
         });
 
         videoListViewModel.allFiles.observe(getViewLifecycleOwner(), files -> {
@@ -1202,14 +1200,60 @@ public class HomeFragment extends Fragment {
         videoListViewModel.allVideos.observe(getViewLifecycleOwner(), videos -> {
             if (videos == null) return;
             allVideoFiles = new ArrayList<>(videos);
-            applyFilterAndSort();
+            // 扫描完成后：若用户未手动选排序，直接更新 filteredFiles 保持原始顺序；
+            // 若用户已选过排序，才走 applyFilterAndSort。
+            if (userHasSelectedSort || !currentSearchQuery.isEmpty()) {
+                applyFilterAndSort();
+            } else {
+                // 无排序：直接以扫描原始顺序展示完整列表
+                filteredFiles = new ArrayList<>(allVideoFiles);
+                // 扫描完成时 displayedFiles 里已经有增量追加的项，
+                // 补全尚未展示的部分（避免重复添加）
+                int alreadyShown = displayedFiles.size();
+                if (alreadyShown < filteredFiles.size()) {
+                    List<FileItem> remaining = filteredFiles.subList(alreadyShown, filteredFiles.size());
+                    displayedFiles.addAll(remaining);
+                    adapter.appendFiles(new ArrayList<>(remaining));
+                }
+                hasMoreData = false;
+                updateEmptyView();
+            }
         });
     }
 
+    /**
+     * 增量追加一批视频（扫描过程中每扫到一批就调一次）。
+     * 只把尚未在 displayedFiles 中的项追加进去，避免重复。
+     */
+    private void appendVideoBatch(List<FileItem> batch) {
+        if (batch == null || batch.isEmpty()) return;
+        // 搜索模式下不做增量追加，等扫完再过滤
+        if (!currentSearchQuery.isEmpty()) return;
+
+        List<FileItem> toAdd = new ArrayList<>();
+        for (FileItem item : batch) {
+            if (currentFilter == null || item.getFileType() == currentFilter) {
+                toAdd.add(item);
+            }
+        }
+        if (toAdd.isEmpty()) return;
+
+        displayedFiles.addAll(toAdd);
+        adapter.appendFiles(toAdd);
+
+        // 更新 loading 文字，显示当前进度
+        if (loadingView != null && loadingTextView != null && loadingView.getVisibility() == View.VISIBLE) {
+            loadingTextView.setText("正在扫描视频... 已找到 " + displayedFiles.size() + " 个");
+        }
+        updateEmptyView();
+    }
+
     private void applyFilterAndSort() {
+        userHasSelectedSort = true; // 调用此方法说明用户触发了排序/搜索
         // 过滤
+        List<FileItem> source = allVideoFiles.isEmpty() ? allFiles : allVideoFiles;
         List<FileItem> filtered = new ArrayList<>();
-        for (FileItem item : allFiles) {
+        for (FileItem item : source) {
             if (currentFilter == null || item.getFileType() == currentFilter) {
                 // 应用搜索过滤
                 if (TextUtils.isEmpty(currentSearchQuery) || 

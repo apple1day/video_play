@@ -151,10 +151,14 @@ public class FolderDetailActivity extends AppCompatActivity {
     }
 
     /**
-     * 加载文件夹内的视频
+     * 加载文件夹内的视频（增量推送，扫到一个就展示一个，消除白屏）。
      */
     private void loadVideos() {
         Log.d(TAG, "加载文件夹视频: " + folderPath);
+        videos.clear();
+        adapter.updateFiles(new ArrayList<>());
+        emptyView.setVisibility(View.GONE);
+        videoList.setVisibility(View.VISIBLE);
 
         new Thread(() -> {
             File folder = new File(folderPath);
@@ -166,34 +170,34 @@ public class FolderDetailActivity extends AppCompatActivity {
                 return;
             }
 
-            List<FileItem> videoList = new ArrayList<>();
-            long totalSize = 0;
-
             File[] files = folder.listFiles();
-            if (files != null) {
+            if (files == null || files.length == 0) {
+                runOnUiThread(() -> {
+                    emptyView.setVisibility(View.VISIBLE);
+                    videoList.setVisibility(View.GONE);
+                });
+                return;
+            }
+
+            long[] totalSize = {0};
             for (File file : files) {
-                // 应用文件过滤规则：过滤隐藏文件和小于1MB的文件
                 if (file.isFile() && isVideoFile(file) && !FileUtils.shouldFilterFile(file)) {
-                    videoList.add(new FileItem(file));
-                    totalSize += file.length();
+                    final FileItem item = new FileItem(file);
+                    totalSize[0] += file.length();
+                    // 每扫到一个视频立即追加到 UI
+                    runOnUiThread(() -> {
+                        videos.add(item);
+                        adapter.notifyItemInserted(videos.size() - 1);
+                        updateEmptyView();
+                    });
                 }
             }
-            }
 
-            // 排序
-            Collections.sort(videoList, (o1, o2) -> 
-                Long.compare(o2.getLastModified(), o1.getLastModified()));
-
-            final long finalTotalSize = totalSize;
-
-            // 更新UI
+            // 所有文件扫完后更新 info 文字
+            final long finalSize = totalSize[0];
             runOnUiThread(() -> {
-                videos.clear();
-                videos.addAll(videoList);
-                adapter.updateFiles(videos);
-                updateEmptyView();
-                updateFolderInfo(videoList.size(), finalTotalSize);
-                Log.d(TAG, "加载了 " + videoList.size() + " 个视频");
+                updateFolderInfo(videos.size(), finalSize);
+                Log.d(TAG, "加载了 " + videos.size() + " 个视频");
             });
         }).start();
     }

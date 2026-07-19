@@ -398,8 +398,12 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         public void bind(FileItem item, int position) {
             fileName.setText(item.getName());
             
-            // 优化：移除clearThumbnail调用，让Glide自己管理请求，减少不必要的clear操作
-            
+            // ViewHolder 被复用前先取消旧的 Glide 请求，防止缩略图串位
+            if (context != null) {
+                ThumbnailLoader.clearThumbnail(context, icon);
+            }
+            icon.setImageResource(android.R.drawable.ic_menu_gallery); // 先置占位
+
             // 设置图标/缩略图
             if (item.isDirectory()) {
                 icon.setImageResource(android.R.drawable.ic_dialog_info);
