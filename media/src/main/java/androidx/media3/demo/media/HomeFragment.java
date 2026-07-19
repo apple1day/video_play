@@ -113,6 +113,9 @@ public class HomeFragment extends Fragment {
         ArrayList<String> getCurrentVideoList();
     }
     
+    // Application Context（在 onAttach 中赋值，生命周期内永远不为 null，避免 Toast NPE）
+    private Context appContext;
+
     // 存储相关
     private List<File> storageDirectories = new ArrayList<>();
     private boolean isInternalStorage = true; // 保留字段以兼容旧缓存接口；主页扫描已改为"全部存储"
@@ -120,6 +123,12 @@ public class HomeFragment extends Fragment {
 
     private enum SortType {
         TIME, SIZE
+    }
+
+    @Override
+    public void onAttach(@NonNull Context context) {
+        super.onAttach(context);
+        appContext = context.getApplicationContext();
     }
 
     @Nullable
@@ -1078,16 +1087,14 @@ public class HomeFragment extends Fragment {
      * 替代所有 Toast.makeText(getContext(), ...) 的调用。
      */
     private void showToast(String message) {
-        Context ctx = isAdded() ? getContext() : null;
-        if (ctx != null) {
-            Toast.makeText(ctx.getApplicationContext(), message, Toast.LENGTH_SHORT).show();
+        if (appContext != null) {
+            Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show();
         }
     }
 
     private void showToastLong(String message) {
-        Context ctx = isAdded() ? getContext() : null;
-        if (ctx != null) {
-            Toast.makeText(ctx.getApplicationContext(), message, Toast.LENGTH_LONG).show();
+        if (appContext != null) {
+            Toast.makeText(appContext, message, Toast.LENGTH_LONG).show();
         }
     }
 
