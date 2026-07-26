@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HDR 画质优化解决方案 — Media3 ExoPlayer</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --orange: #db6d28;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 {
+    font-size: 1.8rem;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  h2 {
+    font-size: 1.3rem;
+    color: var(--accent);
+    margin-top: 2rem;
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1.05rem;
+    color: var(--text);
+    margin-top: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
+  p { margin-bottom: 0.8rem; color: var(--text); }
+  .muted { color: var(--muted); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 1rem;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+  }
+  .badge-green { background: rgba(63,185,80,0.2); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .badge-yellow { background: rgba(210,153,34,0.2); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+  .badge-red { background: rgba(248,81,73,0.2); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-orange { background: rgba(219,109,40,0.2); color: var(--orange); border: 1px solid rgba(219,109,40,0.3); }
+  pre {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 0.5rem 0 1rem 0;
+  }
+  code { font-family: "SF Mono", "Fira Code", "Consolas", monospace; }
+  .inline-code {
+    background: rgba(88,166,255,0.1);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    color: var(--accent);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+  }
+  th { background: rgba(88,166,255,0.1); color: var(--accent); }
+  tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  ul, ol { margin-left: 1.5rem; margin-bottom: 0.8rem; }
+  li { margin-bottom: 0.3rem; }
+  .summary-box {
+    background: linear-gradient(135deg, rgba(88,166,255,0.08), rgba(63,185,80,0.05));
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .recommendation {
+    border-left: 3px solid var(--green);
+    padding-left: 1rem;
+    margin: 0.5rem 0 1rem 0;
+  }
+  .warning {
+    border-left: 3px solid var(--yellow);
+    padding-left: 1rem;
+    margin: 0.5rem 0 1rem 0;
+    color: var(--yellow);
+  }
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .toc ul { list-style: none; margin-left: 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>HDR 画质优化解决方案 — Media3 ExoPlayer 1.9.0-rc01</h1>
+
+<div class="summary-box">
+  <p><strong>核心问题：</strong>HDR 视频在 SDR 屏幕上显示发灰，画质低于电脑端播放器。</p>
+  <p><strong>已完成的优化：</strong><span class="inline-code">clearViewportSizeConstraints()</span> + <span class="inline-code">setForceHighestSupportedBitrate(true)</span> — 解决了分辨率降选和码率选择问题。</p>
+  <p><strong>剩余问题：</strong>HDR→SDR 色调映射 (tone mapping) 未启用。</p>
+  <p><strong>推荐方案：</strong>方案 A（自定义 Renderer + 强制 OpenGL Tone Mapping），无需额外依赖，利用项目已有的源码级 API。</p>
+</div>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ul>
+    <li><a href="#current">当前状态</a></li>
+    <li><a href="#analysis">源码级架构分析</a></li>
+    <li><a href="#solutions">三个可选方案</a></li>
+    <li><a href="#recommendation">推荐方案详解</a></li>
+    <li><a href="#comparison">方案对比表</a></li>
+    <li><a href="#next">后续建议</a></li>
+  </ul>
+</div>
+
+<h2 id="current">当前状态</h2>
+
+<div class="card">
+  <h3>已完成 ✅ <span class="badge badge-green">已部署</span></h3>
+  <table>
+    <tr><th>优化项</th><th>说明</th><th>影响</th></tr>
+    <tr>
+      <td><code>clearViewportSizeConstraints()</code></td>
+      <td>禁用物理屏幕尺寸限制</td>
+      <td>4K 视频不再被降为 1080p</td>
+    </tr>
+    <tr>
+      <td><code>setForceHighestSupportedBitrate(true)</code></td>
+      <td>强制选最高码率轨道</td>
+      <td>多码率视频不再选中等码率</td>
+    </tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>未完成 ❌ <span class="badge badge-red">待解决</span></h3>
+  <table>
+    <tr><th>问题</th><th>原因</th><th>表现</th></tr>
+    <tr>
+      <td>HDR→SDR 色调映射</td>
+      <td>ExoPlayer 仅在设备不支持 colorTransfer 时自动回退 tone mapping；支持 HDR 的设备不做转换，但 SDR 屏幕仍显示不正确</td>
+      <td>HDR 视频发灰、色彩平淡、对比度低</td>
+    </tr>
+  </table>
+</div>
+
+<h2 id="analysis">源码级架构分析</h2>
+
+<p>由于本项目是 <strong>Media3 源码级工程</strong>（非 Maven 依赖），我们可以直接访问和修改内部 API。通过源码分析发现：</p>
+
+<div class="card">
+  <h3>HDR→SDR Tone Mapping 的完整调用链</h3>
+  <pre><code>ExoPlayer.setVideoEffects(List&lt;Effect&gt;)
+  └─→ ExoPlayerImpl.setVideoEffects()
+       ├─→ 反射检查 media3-effect 模块是否在 classpath  ❌ 不存在
+       └─→ sendRendererMessage(MSG_SET_VIDEO_EFFECTS)
+            └─→ MediaCodecVideoRenderer.setVideoEffects()
+                 ├─→ videoEffects 字段被设置
+                 └─→ enable() 时:
+                      └─→ createPlaybackVideoGraphWrapper()
+                           └─→ new PlaybackVideoGraphWrapper.Builder().build()
+                                └─→ registerInput() 中判断 tone mapping:
+                                     ├─ requestOpenGlToneMapping == true → 强制 SDR  ⭐
+                                     ├─ HLG && API<34 && PQ支持 → 转 PQ
+                                     ├─ colorTransfer 不支持 && API≥29 → 自动 SDR
+                                     └─ 其他 → 保持原样 (HDR 直出)</code></pre>
+</div>
+
+<div class="card">
+  <h3>关键发现</h3>
+  <table>
+    <tr><th>组件</th><th>位置</th><th>关键点</th></tr>
+    <tr>
+      <td><code>PlaybackVideoGraphWrapper</code></td>
+      <td><code>libraries/exoplayer/.../video/</code></td>
+      <td>
+        内部有 <code>requestOpenGlToneMapping</code> 字段（行310），<code>setRequestOpenGlToneMapping()</code> 方法（行464）。
+        设为 <code>true</code> 时，<code>registerInput()</code> 会强制将输出设为 <code>ColorInfo.SDR_BT709_LIMITED</code>，
+        通过 OpenGL 执行 HDR→SDR tone mapping（行566-567）。
+      </td>
+    </tr>
+    <tr>
+      <td><code>MediaCodecVideoRenderer</code></td>
+      <td><code>libraries/exoplayer/.../video/</code></td>
+      <td>
+        <code>createPlaybackVideoGraphWrapper()</code> 是 <code>protected</code> 方法（行977），可被子类覆盖。
+        这是注入 <code>requestOpenGlToneMapping=true</code> 的切入点。
+      </td>
+    </tr>
+    <tr>
+      <td><code>ExoPlayerImpl.setVideoEffects()</code></td>
+      <td><code>libraries/exoplayer/.../</code></td>
+      <td>
+        通过反射检查 <code>androidx.media3.effect.SingleInputVideoGraph$Factory</code> 是否在 classpath。
+        如果 <code>media3-effect</code> 模块不存在，会抛出 <code>IllegalStateException</code>。
+        <strong>但</strong>Effects pipeline 仅在 <code>videoEffects != null</code> 时创建 PlaybackVideoGraphWrapper（行888）。
+      </td>
+    </tr>
+    <tr>
+      <td><code>media3-effect</code> 模块</td>
+      <td>不存在于项目中</td>
+      <td>
+        <code>libraries/</code> 目录下只有 common, container, database, datasource, decoder, exoplayer, extractor, ui — 
+        <strong>没有 effect 模块</strong>。
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h2 id="solutions">三个可选方案</h2>
+
+<!-- 方案 A -->
+<div class="card">
+  <h3>方案 A：自定义 Renderer + 强制 OpenGL Tone Mapping <span class="badge badge-green">推荐</span></h3>
+  <p><strong>原理：</strong>继承 <code>MediaCodecVideoRenderer</code>，覆盖 <code>createPlaybackVideoGraphWrapper()</code>，在创建后调用 <code>setRequestOpenGlToneMapping(true)</code>。</p>
+  <p><strong>不需要 media3-effect 模块</strong> — 直接利用 PlaybackVideoGraphWrapper 内部已有的 OpenGL tone mapping 逻辑。但需要触发 effects pipeline 的创建条件。</p>
+  
+  <h4>实现步骤</h4>
+  <ol>
+    <li>创建自定义 <code>ToneMappingVideoRenderer</code> 继承 <code>MediaCodecVideoRenderer</code></li>
+    <li>覆盖 <code>createPlaybackVideoGraphWrapper()</code>，在返回前调用 <code>setRequestOpenGlToneMapping(true)</code></li>
+    <li>创建自定义 <code>RenderersFactory</code>，用 <code>ToneMappingVideoRenderer</code> 替换默认视频渲染器</li>
+    <li>在 <code>PlayerActivity</code> 中使用自定义 RenderersFactory</li>
+  </ol>
+
+  <h4>关键代码</h4>
+  <pre><code>// ToneMappingVideoRenderer.java
+public class ToneMappingVideoRenderer extends MediaCodecVideoRenderer {
+
+    public ToneMappingVideoRenderer(Context context) {
+        super(context, MediaCodecSelector.DEFAULT);
+    }
+
+    @Override
+    protected PlaybackVideoGraphWrapper createPlaybackVideoGraphWrapper(
+            Context context, VideoFrameReleaseControl videoFrameReleaseControl) {
+        PlaybackVideoGraphWrapper wrapper = super.createPlaybackVideoGraphWrapper(
+                context, videoFrameReleaseControl);
+        // 强制启用 OpenGL HDR→SDR tone mapping
+        wrapper.setRequestOpenGlToneMapping(true);
+        return wrapper;
+    }
+}</code></pre>
+
+  <pre><code>// ToneMappingRenderersFactory.java
+public class ToneMappingRenderersFactory extends DefaultRenderersFactory {
+
+    public ToneMappingRenderersFactory(Context context) {
+        super(context);
+        setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON);
+        setEnableDecoderFallback(true);
+    }
+
+    @Override
+    protected void buildVideoRenderers(
+            Context context,
+            @ExtensionRendererMode int extensionRendererMode,
+            MediaCodecSelector mediaCodecSelector,
+            CustomDrmSessionManager.Provider drmSessionManagerProvider,
+            long allowedVideoJoiningDurationMs,
+            Handler eventHandler,
+            VideoRendererEventListener videoRendererEventListener,
+            ArrayList&lt;Renderer&gt; out) {
+        out.add(new ToneMappingVideoRenderer(context));
+        super.buildVideoRenderers(context, extensionRendererMode,
+                mediaCodecSelector, drmSessionManagerProvider,
+                allowedVideoJoiningDurationMs, eventHandler,
+                videoRendererEventListener, out);
+    }
+}</code></pre>
+
+  <pre><code>// PlayerActivity.java - initializePlayer() 中替换
+// 原来：
+DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this)
+    .setExtensionRendererMode(...)
+    .setEnableDecoderFallback(true);
+
+// 改为：
+ToneMappingRenderersFactory renderersFactory = 
+    new ToneMappingRenderersFactory(this);</code></pre>
+
+  <div class="warning">
+    <strong>⚠️ 注意：</strong>此方案需要触发 PlaybackVideoGraphWrapper 的创建。
+    源码中 <code>videoEffects != null</code> 是创建条件（行888）。
+    需要在 prepare() 前调用 <code>player.setVideoEffects(ImmutableList.of())</code>（空 list）来触发 effects pipeline。
+    但 <code>setVideoEffects()</code> 会反射检查 media3-effect 模块——如果不添加该模块会抛异常。
+    <br><br>
+    <strong>解决方案：</strong>同时添加 <code>media3-effect</code> 模块到项目（从 upstream 拉取），或修改 <code>ExoPlayerImpl.setVideoEffects()</code> 移除反射检查。
+  </div>
+
+  <h4>优缺点</h4>
+  <table>
+    <tr><th>优点</th><th>缺点</th></tr>
+    <tr>
+      <td>
+        <ul>
+          <li>利用项目已有的 OpenGL tone mapping 内部实现</li>
+          <li>API≥29 广泛支持</li>
+          <li>视觉效果好（OpenGL tone mapping 质量较高）</li>
+          <li>无需额外第三方库</li>
+        </ul>
+      </td>
+      <td>
+        <ul>
+          <li>需要添加 media3-effect 模块或修改 ExoPlayerImpl</li>
+          <li>使用了 <code>@UnstableApi</code> 内部 API</li>
+          <li>可能引入轻微性能开销（OpenGL 处理）</li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- 方案 B -->
+<div class="card">
+  <h3>方案 B：添加 media3-effect 模块 + setVideoEffects API <span class="badge badge-yellow">标准方案</span></h3>
+  <p><strong>原理：</strong>从 Media3 upstream 拉取 <code>libraries/effect</code> 模块，添加到项目构建中，然后通过标准的 <code>setVideoEffects()</code> API 启用 effects pipeline。</p>
+
+  <h4>实现步骤</h4>
+  <ol>
+    <li>从 <a href="https://github.com/androidx/media">androidx/media</a> 仓库拉取 <code>libraries/effect</code> 目录</li>
+    <li>在 <code>core_settings.gradle</code> 添加 <code>include ':lib-effect'</code></li>
+    <li>在 <code>media/build.gradle</code> 添加 <code>implementation project(modulePrefix + 'lib-effect')</code></li>
+    <li>在 <code>PlayerActivity.initializePlayer()</code> 中 <code>prepare()</code> 前调用：
+      <pre><code>player.setVideoEffects(ImmutableList.of());</code></pre>
+    </li>
+    <li>同时使用方案 A 的自定义 Renderer 来设置 <code>requestOpenGlToneMapping=true</code></li>
+  </ol>
+
+  <h4>优缺点</h4>
+  <table>
+    <tr><th>优点</th><th>缺点</th></tr>
+    <tr>
+      <td>
+        <ul>
+          <li>使用标准 API，不修改内部代码</li>
+          <li>未来可添加更多 video effects</li>
+          <li>Google 官方推荐路径</li>
+        </ul>
+      </td>
+      <td>
+        <ul>
+          <li>需要拉取并集成 media3-effect 模块</li>
+          <li>增加 APK 体积</li>
+          <li>需要确认版本兼容性（当前 1.9.0-rc01）</li>
+          <li>仍需自定义 Renderer 来强制 tone mapping</li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- 方案 C -->
+<div class="card">
+  <h3>方案 C：修改 ExoPlayerImpl 移除反射检查 + 自定义 Renderer <span class="badge badge-orange">最小改动</span></h3>
+  <p><strong>原理：</strong>直接修改源码，移除 <code>ExoPlayerImpl.setVideoEffects()</code> 中的反射检查，使空 effects list 能正常传递到 renderer 以触发 PlaybackVideoGraphWrapper 创建。</p>
+
+  <h4>关键修改</h4>
+  <pre><code>// ExoPlayerImpl.java - setVideoEffects() 修改前:
+public void setVideoEffects(List&lt;Effect&gt; videoEffects) {
+    verifyApplicationThread();
+    try {
+        Class.forName("androidx.media3.effect.SingleInputVideoGraph$Factory")
+            .getConstructor(VideoFrameProcessor.Factory.class);
+    } catch (ClassNotFoundException | NoSuchMethodException e) {
+        throw new IllegalStateException("Could not find required lib-effect dependencies.", e);
+    }
+    sendRendererMessage(TRACK_TYPE_VIDEO, MSG_SET_VIDEO_EFFECTS, videoEffects);
+}
+
+// 修改后（移除反射检查）:
+public void setVideoEffects(List&lt;Effect&gt; videoEffects) {
+    verifyApplicationThread();
+    sendRendererMessage(TRACK_TYPE_VIDEO, MSG_SET_VIDEO_EFFECTS, videoEffects);
+}</code></pre>
+
+  <pre><code>// PlayerActivity.java - prepare() 前添加:
+player.setVideoEffects(ImmutableList.of());</code></pre>
+
+  <p>同时仍需方案 A 的自定义 Renderer 来设置 <code>requestOpenGlToneMapping=true</code>。</p>
+
+  <h4>优缺点</h4>
+  <table>
+    <tr><th>优点</th><th>缺点</th></tr>
+    <tr>
+      <td>
+        <ul>
+          <li>改动最小，不需要额外模块</li>
+          <li>不需要从 upstream 拉取代码</li>
+        </ul>
+      </td>
+      <td>
+        <ul>
+          <li>修改了 Media3 框架内部代码，升级时需注意合并</li>
+          <li>违反了 setVideoEffects 的 API 契约</li>
+          <li>运行时可能在 PlaybackVideoGraphWrapper 内部因缺少 effect 模块类而崩溃</li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h2 id="comparison">方案对比表</h2>
+
+<table>
+  <tr>
+    <th>维度</th>
+    <th>方案 A (自定义 Renderer)</th>
+    <th>方案 B (+ media3-effect)</th>
+    <th>方案 C (改 ExoPlayerImpl)</th>
+  </tr>
+  <tr>
+    <td>改动量</td>
+    <td>中等（2 个新类 + 1 行修改）</td>
+    <td>大（拉取模块 + 3 处配置 + 2 个新类）</td>
+    <td>小（1 处源码修改 + 2 个新类）</td>
+  </tr>
+  <tr>
+    <td>需要额外模块</td>
+    <td>需 media3-effect 或改 ExoPlayerImpl</td>
+    <td>是（media3-effect）</td>
+    <td>否</td>
+  </tr>
+  <tr>
+    <td>APK 体积影响</td>
+    <td>无（或配合 B 有增量）</td>
+    <td>增加（effect 模块约 200KB+）</td>
+    <td>无</td>
+  </tr>
+  <tr>
+    <td>视觉效果</td>
+    <td>★★★★★ OpenGL tone mapping</td>
+    <td>★★★★★ OpenGL tone mapping</td>
+    <td>★★★★★ OpenGL tone mapping</td>
+  </tr>
+  <tr>
+    <td>API 兼容性</td>
+    <td>使用 @UnstableApi</td>
+    <td>标准 API</td>
+    <td>修改内部代码</td>
+  </tr>
+  <tr>
+    <td>运行时风险</td>
+    <td>低（仅当 videoEffects!=null 时触发）</td>
+    <td>最低（官方路径）</td>
+    <td>中（可能缺少 effect 类导致 NPE）</td>
+  </tr>
+  <tr>
+    <td>升级维护</td>
+    <td>中等（需跟踪 API 变化）</td>
+    <td>低（标准 API）</td>
+    <td>高（每次升级需重新 patch）</td>
+  </tr>
+</table>
+
+<h2 id="recommendation">推荐方案：A + B 组合</h2>
+
+<div class="recommendation">
+  <p><strong>最佳实践：方案 B（添加 media3-effect 模块）+ 方案 A（自定义 Renderer 强制 tone mapping）</strong></p>
+</div>
+
+<p>理由：</p>
+<ol>
+  <li><strong>添加 media3-effect 模块</strong>使 <code>setVideoEffects()</code> API 正常工作，不违反框架的 API 契约，PlaybackVideoGraphWrapper 内部所需的 effect 类（如 <code>SingleInputVideoGraph$Factory</code>）也能在运行时找到。</li>
+  <li><strong>自定义 Renderer</strong>覆盖 <code>createPlaybackVideoGraphWrapper()</code>，调用 <code>setRequestOpenGlToneMapping(true)</code>，这是唯一能在设备支持 HDR colorTransfer 时强制执行 tone mapping 的方式。</li>
+  <li>仅调用 <code>setVideoEffects(ImmutableList.of())</code> 只会创建 effects pipeline 但不会自动 tone map（因为设备支持 colorTransfer 时走 "保持原样" 分支）。必须配合自定义 Renderer。</li>
+</ol>
+
+<h3>完整实现清单</h3>
+
+<table>
+  <tr><th>步骤</th><th>文件</th><th>操作</th></tr>
+  <tr>
+    <td>1</td>
+    <td><code>libraries/effect/</code></td>
+    <td>从 androidx/media upstream 拉取 effect 模块</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><code>core_settings.gradle</code></td>
+    <td>添加 <code>include ':lib-effect'</code></td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><code>media/build.gradle</code></td>
+    <td>添加 <code>implementation project(modulePrefix + 'lib-effect')</code></td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><code>ToneMappingVideoRenderer.java</code> (新建)</td>
+    <td>继承 MediaCodecVideoRenderer，覆盖 createPlaybackVideoGraphWrapper()</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><code>ToneMappingRenderersFactory.java</code> (新建)</td>
+    <td>继承 DefaultRenderersFactory，buildVideoRenderers() 中注入自定义 Renderer</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><code>PlayerActivity.java</code></td>
+    <td>替换 RenderersFactory + prepare() 前调用 setVideoEffects(ImmutableList.of())</td>
+  </tr>
+</table>
+
+<h2 id="next">后续建议</h2>
+
+<div class="card">
+  <h3>1. 验证当前优化效果</h3>
+  <p>在实施 HDR tone mapping 前，建议先用 SDR 高分辨率视频验证已有的 <code>clearViewportSizeConstraints()</code> 和 <code>setForceHighestSupportedBitrate(true)</code> 是否生效。准备一段 4K SDR 视频播放，对比修改前后的画质差异。</p>
+</div>
+
+<div class="card">
+  <h3>2. HDR 视频测试素材</h3>
+  <p>准备 HDR10/HLG 测试视频验证 tone mapping 效果：</p>
+  <ul>
+    <li>HDR10 (PQ/ST2084) — 最常见的 HDR 格式</li>
+    <li>HLG — BBC/NHK 开发的 HDR 格式</li>
+    <li>Dolby Vision — 需要额外解码器支持</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>3. 性能监控</h3>
+  <p>启用 tone mapping 后，OpenGL 处理会增加 GPU 负载。建议在低端设备上测试：</p>
+  <ul>
+    <li>播放 4K HDR 视频时的丢帧率</li>
+    <li>CPU/GPU 占用率变化</li>
+    <li>电池消耗影响</li>
+  </ul>
+  <p>如果性能不达标，可以考虑添加 "仅在 SDR 屏幕上启用 tone mapping" 的运行时判断逻辑。</p>
+</div>
+
+<div class="card">
+  <h3>4. 自动检测 SDR 屏幕</h3>
+  <p>可以在自定义 Renderer 中添加运行时判断，仅在 SDR 屏幕上启用 tone mapping：</p>
+  <pre><code>@Override
+protected PlaybackVideoGraphWrapper createPlaybackVideoGraphWrapper(
+        Context context, VideoFrameReleaseControl videoFrameReleaseControl) {
+    PlaybackVideoGraphWrapper wrapper = super.createPlaybackVideoGraphWrapper(
+            context, videoFrameReleaseControl);
+    
+    // 仅在 SDR 屏幕上强制 tone mapping
+    Display display = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE))
+            .getDefaultDisplay();
+    boolean isHdrDisplay = display.isWideColorGamut() 
+            && (display.getHdrCapabilities() != null 
+                && display.getHdrCapabilities().getSupportedHdrTypes().length > 0);
+    
+    if (!isHdrDisplay) {
+        wrapper.setRequestOpenGlToneMapping(true);
+    }
+    return wrapper;
+}</code></pre>
+</div>
+
+</div>
+</body>
+</html>

@@ -51,6 +51,10 @@ dist
 jacoco.exec
 tmp
 
+# Box AI session files
+output/
+.session_tmps/
+
 # External native builds
 .externalNativeBuild
 .cxx
