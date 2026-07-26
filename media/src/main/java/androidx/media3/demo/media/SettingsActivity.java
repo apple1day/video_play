@@ -12,6 +12,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Switch;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -35,6 +36,9 @@ public class SettingsActivity extends AppCompatActivity {
     private TextView seekCurrentHint;
     private View seekPercentRow;
     private View seekFixedHint;
+
+    /** SharedPreferences key：是否强制最高码率。 */
+    public static final String PREF_FORCE_HIGHEST_BITRATE = "force_highest_bitrate";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,6 +127,19 @@ public class SettingsActivity extends AppCompatActivity {
                 pendingDeleteManager.setMaxPendingCount(current + 1);
                 updatePendingCountDisplay();
             }
+        });
+
+        // ── 播放画质：强制最高码率开关 ─────────────────────────────────────────
+        android.content.SharedPreferences appPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        Switch forceHighestBitrateSwitch = findViewById(R.id.switch_force_highest_bitrate);
+        forceHighestBitrateSwitch.setChecked(
+                appPrefs.getBoolean(PREF_FORCE_HIGHEST_BITRATE, false));
+        forceHighestBitrateSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
+            appPrefs.edit().putBoolean(PREF_FORCE_HIGHEST_BITRATE, isChecked).apply();
+            Toast.makeText(this,
+                    isChecked ? "已开启强制最高码率（重新打开视频生效）"
+                              : "已关闭强制最高码率（重新打开视频生效）",
+                    Toast.LENGTH_SHORT).show();
         });
 
         // ── 快进设置 ────────────────────────────────────────────

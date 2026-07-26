@@ -514,7 +514,7 @@ public class PlayerActivity extends AppCompatActivity {
                     .putInt(PREF_ENHANCE_PRESET, which).apply();
                 // 实时切换 Effect，无需重启 player
                 if (player != null) {
-                    player.setVideoEffects(currentEnhancePreset.buildEffects());
+                    player.setVideoEffects(currentEnhancePreset.buildEffectsForPipeline());
                 }
                 updateEnhanceButtonLabel(button);
                 dialog.dismiss();
@@ -659,25 +659,36 @@ public class PlayerActivity extends AppCompatActivity {
         // 在 SDR 屏幕上强制启用 OpenGL HDR→SDR tone mapping，解决 HDR 视频发灰问题。
         ToneMappingRenderersFactory renderersFactory = new ToneMappingRenderersFactory(this);
 
-        // ── LoadControl：增大缓冲区，减少卡顿 ────────────────────────────────
+        // ── LoadControl：适度缓冲，平衡流畅度与内存 ─────────────────────────
+        // maxBufferMs 50s 对高码率本地视频（4K ~50MB/s）会消耗数百MB，直接OOM。
+        // 本地文件无网络延迟，8s 缓冲已足够流畅，大幅降低内存占用。
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs      */ 15_000,   // 最小缓冲 15s（默认 50s 太激进，15s 足够流畅）
-                /* maxBufferMs      */ 50_000,   // 最大缓冲 50s
-                /* bufferForPlaybackMs              */ 2_500,  // 首帧等待 2.5s
-                /* bufferForPlaybackAfterRebufferMs */ 5_000   // 卡顿后恢复 5s
+                /* minBufferMs      */ 5_000,    // 最小缓冲 5s
+                /* maxBufferMs      */ 8_000,    // 最大缓冲 8s（本地文件无需大缓冲）
+                /* bufferForPlaybackMs              */ 1_500,  // 首帧等待 1.5s
+                /* bufferForPlaybackAfterRebufferMs */ 3_000   // 卡顿后恢复 3s
             )
+            .setTargetBufferBytes(DefaultLoadControl.DEFAULT_TARGET_BUFFER_BYTES) // 使用默认字节上限
+            .setPrioritizeTimeOverSizeThresholds(true) // 时长优先，避免过度缓冲
             .build();
 
-        // ── 轨道选择：强制选最高画质 ──────────────────────────────────────────
-        // ExoPlayer 默认 isViewportSizeLimitedByPhysicalDisplaySize=true，
-        // 会根据物理屏幕尺寸降选低分辨率轨道（如 4K 降到 1080p）。
-        // 本地文件播放不需要此限制，清除 viewport 约束确保解码原始全分辨率。
-        // setForceHighestSupportedBitrate(true) 确保多码率轨道选最高码率。
-        TrackSelectionParameters trackParams = new TrackSelectionParameters.Builder(this)
-            .clearViewportSizeConstraints()  // 禁用屏幕尺寸限制，不降分辨率
-            .setForceHighestSupportedBitrate(true)  // 强制选最高码率
-            .build();
+        // 提前读取 SharedPreferences，供后续轨道选择和画质预设共用
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+
+        // ── 轨道选择：根据用户设置决定是否强制最高码率 ───────────────────────────
+        // 默认关闭：ExoPlayer 按屏幕分辨率智能选轨，省内存，适合大多数场景。
+        // 开启后：忽略屏幕尺寸限制，始终选择最高码率轨道（适合 4K/高码率视频）。
+        boolean forceHighestBitrate = prefs.getBoolean(
+                SettingsActivity.PREF_FORCE_HIGHEST_BITRATE, false);
+        TrackSelectionParameters.Builder trackParamsBuilder =
+                new TrackSelectionParameters.Builder(this);
+        if (forceHighestBitrate) {
+            trackParamsBuilder
+                .clearViewportSizeConstraints()   // 禁用屏幕尺寸限制，不降分辨率
+                .setForceHighestSupportedBitrate(true); // 强制选最高码率
+        }
+        TrackSelectionParameters trackParams = trackParamsBuilder.build();
 
         player = new ExoPlayer.Builder(this, renderersFactory)
             .setLoadControl(loadControl)
@@ -687,23 +698,25 @@ public class PlayerActivity extends AppCompatActivity {
         player.setTrackSelectionParameters(trackParams);
 
         // ── 读取用户画质预设 ──────────────────────────────────────────────────
-        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
         currentEnhancePreset = VideoEnhancePreset.fromOrdinal(
                 prefs.getInt(PREF_ENHANCE_PRESET, VideoEnhancePreset.STANDARD.ordinal()));
 
         // ── 启用 Effects Pipeline（HDR→SDR Tone Mapping + 画质增强）────────────
-        // setVideoEffects() 触发 PlaybackVideoGraphWrapper 创建；ToneMappingVideoRenderer
-        // 会在 SDR 屏幕上自动注入 OpenGL tone mapping。同时携带用户选中的画质 Effect。
-        // 必须在 prepare() 之前调用，否则 effects pipeline 不会初始化。
-        player.setVideoEffects(currentEnhancePreset.buildEffects());
+        // setVideoEffects() 必须传非空列表才能激活 OpenGL pipeline（含 ToneMapping）。
+        // STANDARD 预设返回空列表，会跳过 pipeline 导致 ToneMappingVideoRenderer 的
+        // setRequestOpenGlToneMapping 在 registerInput() 前未生效 → 黑屏。
+        // 修复：始终传入 VideoEnhancePreset.buildEffectsForPipeline()，
+        // 该方法在 STANDARD 时注入一个 No-op passthrough Effect 以保证 pipeline 被激活。
+        player.setVideoEffects(currentEnhancePreset.buildEffectsForPipeline());
 
         // VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING 会放大填充，导致边缘裁剪
         // 使用 VIDEO_SCALING_MODE_SCALE_TO_FIT（默认），保持宽高比，不拉伸
         player.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
         player.setHandleAudioBecomingNoisy(true);
+        // 先绑定 PlayerView，再 prepare，确保 Surface 在解码前已就绪，避免首帧黑屏
         playerView.setPlayer(player);
 
-        // 将所有视频文件转换为 MediaItem 列表
+        // 将所有视频文件转换为 MediaItem 列表（后台线程异步构建，避免主线程 IO）
         List<MediaItem> mediaItems = new ArrayList<>();
         for (String filePath : fileList) {
             File file = new File(filePath);
@@ -718,25 +731,25 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         // 使用 setMediaItems 设置播放列表，这样"下一个"按钮才会可用
-        // 从当前索引开始播放
-        player.setMediaItems(mediaItems, currentIndex, 0);
+        // 从当前索引开始播放；seekToDefaultPosition 由 savedPosition 逻辑覆盖
+        player.setMediaItems(mediaItems, currentIndex, /* startPositionMs= */ 0);
         player.prepare();
         
-        // 打开视频时立即标记为已观看
-        if (currentFilePath != null) {
-            watchedManager.markAsWatched(currentFilePath);
-        }
-        
-        // 恢复播放位置（如果有历史记录）
+        // 恢复播放位置（如果有历史记录）—— 必须在 prepare() 之后、play() 之前 seekTo
         long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
         if (savedPosition > 0) {
             player.seekTo(savedPosition);
         }
         
-        // 恢复播放速度
+        // 恢复播放速度（在 seekTo 之后设置，避免速度被重置）
         PlaybackSpeedHelper.restorePlaybackSpeed(this, player);
         
         player.play();
+        
+        // 打开视频后标记为已观看（在 play() 之后，避免在 seekTo 期间触发不必要的 DB 写入）
+        if (currentFilePath != null) {
+            watchedManager.markAsWatched(currentFilePath);
+        }
 
         player.addListener(new Player.Listener() {
             @Override
@@ -898,73 +911,17 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void playNext() {
-        // 如果使用播放列表，直接使用 ExoPlayer 的导航功能
-        if (player != null && player.getMediaItemCount() > 0) {
-            // 从列表中移除当前文件
-            if (currentIndex >= 0 && currentIndex < fileList.size()) {
-                fileList.remove(currentIndex);
-            }
-            
-            // 如果列表为空，关闭播放器
-            if (fileList.isEmpty()) {
-                finish();
-                return;
-            }
-            
-            // 重新构建播放列表
-            List<MediaItem> mediaItems = new ArrayList<>();
-            for (String filePath : fileList) {
-                File file = new File(filePath);
-                if (file.exists()) {
-                    mediaItems.add(SubtitleAutoLoader.buildItem(file));
-                }
-            }
-            
-            if (mediaItems.isEmpty()) {
-                finish();
-                return;
-            }
-            
-            // 调整索引
-            if (currentIndex >= fileList.size()) {
-                currentIndex = fileList.size() - 1;
-            }
-            if (currentIndex < 0) {
-                currentIndex = 0;
-            }
-            
-            // 更新播放列表
-            player.setMediaItems(mediaItems, currentIndex, 0);
-            player.prepare();
-            player.play();
-            
-            // 更新当前文件路径
-            if (currentIndex < fileList.size()) {
-                currentFilePath = fileList.get(currentIndex);
-            }
-        } else {
-            // 备用方案：重新初始化播放器
-            if (currentIndex >= fileList.size()) {
-                finish();
-                return;
-            }
-
-            // 从当前索引开始查找存在的视频文件
-            while (currentIndex < fileList.size()) {
-                String nextPath = fileList.get(currentIndex);
-                File nextFile = new File(nextPath);
-                if (nextFile.exists()) {
-                    currentFilePath = nextPath;
-                    initializePlayer();
-                    return;
-                }
-                // 文件不存在，继续查找下一个
-                currentIndex++;
-            }
-
-            // 没有找到存在的视频文件，关闭播放器
+        if (player == null) {
             finish();
+            return;
         }
+        // 优先用 ExoPlayer 自带的列表跳转，无需重建 MediaItem 列表（性能更好）
+        if (player.hasNextMediaItem()) {
+            player.seekToNextMediaItem();
+            return;
+        }
+        // 没有下一个了，关闭播放器
+        finish();
     }
 
     @Override

@@ -11,14 +11,19 @@ import com.google.common.collect.ImmutableList;
  * 视频画质增强预设。
  *
  * 通过 Media3 Effect pipeline（OpenGL GPU 处理）对播放画面进行实时调色：
- *  - 标准：不做任何处理，保持原始输出
+ *  - 标准：不做额外调色，保持原始输出（但仍激活 OpenGL pipeline 以支持 HDR→SDR tone mapping）
  *  - 鲜艳：提升对比度 + 饱和度，视觉冲击力更强（类似 VLC "全彩"）
- *  - 柔和：轻微提升亮度，降低对比度，护眼模式
+ *  - 柔和：轻微降低对比度，护眼模式
+ *
+ * <p><b>注意：</b>必须使用 {@link #buildEffectsForPipeline()} 而非 {@link #buildEffects()} 传给
+ * {@code player.setVideoEffects()}，以保证 OpenGL pipeline 始终被激活（STANDARD 预设需注入
+ * No-op Contrast(0) 来触发 pipeline 初始化，否则 {@link ToneMappingVideoRenderer} 的
+ * setRequestOpenGlToneMapping 在 registerInput() 阶段失效，导致 HDR 内容黑屏）。
  */
 @UnstableApi
 public enum VideoEnhancePreset {
 
-    /** 标准：不添加任何 effect，与原始解码输出一致。 */
+    /** 标准：不做额外调色，但通过 No-op Contrast(0) 激活 OpenGL pipeline 以支持 tone mapping。 */
     STANDARD("标准") {
         @Override
         public ImmutableList<Effect> buildEffects() {
@@ -61,8 +66,25 @@ public enum VideoEnhancePreset {
         this.label = label;
     }
 
-    /** 构建该预设对应的 Effect 列表，直接传给 {@code player.setVideoEffects()}。 */
+    /** 构建该预设的原始 Effect 列表（STANDARD 返回空列表）。 */
     public abstract ImmutableList<Effect> buildEffects();
+
+    /**
+     * 构建用于传给 {@code player.setVideoEffects()} 的 Effect 列表。
+     *
+     * <p>与 {@link #buildEffects()} 的区别：STANDARD 预设会注入一个 No-op {@code Contrast(0)}
+     * 以确保 OpenGL effects pipeline 被激活，使 {@link ToneMappingVideoRenderer} 的
+     * HDR→SDR tone mapping 生效。非 STANDARD 预设直接返回原列表。
+     */
+    public ImmutableList<Effect> buildEffectsForPipeline() {
+        ImmutableList<Effect> effects = buildEffects();
+        if (effects.isEmpty()) {
+            // 注入 No-op effect，isNoOp()==true 时 GPU 不做额外处理，
+            // 但 pipeline 已初始化，ToneMappingVideoRenderer 的 tone mapping 可正常生效。
+            return ImmutableList.of(new Contrast(0f));
+        }
+        return effects;
+    }
 
     public static VideoEnhancePreset fromOrdinal(int ordinal) {
         VideoEnhancePreset[] values = values();
