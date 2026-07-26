@@ -35,6 +35,11 @@ public class PlayHistoryManager {
 
     private final PlayHistoryDao dao;
 
+    // 异步写 DB 的线程池（单线程，按顺序执行，避免并发冲突），与 WatchedManager 保持一致，
+    // 避免在 onMediaItemTransition / onStop 等主线程回调中同步阻塞 SQLite 写操作导致切换视频卡顿。
+    private static final java.util.concurrent.ExecutorService dbWriter =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     private PlayHistoryManager(Context context) {
         this.dao = AppDatabase.get(context).playHistoryDao();
         migrateFromSharedPrefsIfNeeded(context);
@@ -49,10 +54,13 @@ public class PlayHistoryManager {
 
     public void savePlayPosition(String filePath, long position, long duration) {
         if (filePath == null) return;
-        dao.upsert(new PlayHistoryEntity(filePath, position, duration, System.currentTimeMillis()));
-        // 顺手修剪历史，保持上限
-        dao.trim(MAX_HISTORY_SIZE);
-        Log.d(TAG, "Saved play position: " + filePath + " -> " + position + "ms");
+        // 异步写库，调用方（通常在主线程回调中）不会被 SQLite 写操作阻塞
+        dbWriter.execute(() -> {
+            dao.upsert(new PlayHistoryEntity(filePath, position, duration, System.currentTimeMillis()));
+            // 顺手修剪历史，保持上限
+            dao.trim(MAX_HISTORY_SIZE);
+            Log.d(TAG, "Saved play position: " + filePath + " -> " + position + "ms");
+        });
     }
 
     public long getPlayPosition(String filePath) {

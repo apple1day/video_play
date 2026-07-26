@@ -104,6 +104,11 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean userLeaving = false;
     // 当播放列表来自"文件夹详情"时为 true，禁用 HomeFragment 的"加载更多"扩列表
     private boolean fromFolderPlaylist = false;
+    // 后台线程池：用于异步扫描"伴生字幕"文件（同目录 listFiles() 属于同步磁盘 IO），
+    // 避免在主线程对整个播放列表做同步 IO 扫描，导致打开播放器时卡顿。
+    private final java.util.concurrent.ExecutorService subtitleScanExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     @androidx.annotation.Nullable private PlaybackService boundService;
     private final ServiceConnection serviceConn = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
@@ -641,6 +646,20 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
+    /** 判断当前要播放的视频文件是否位于 USB/SD 卡等可移动存储（非手机内部存储）。 */
+    private boolean isCurrentSourceRemovableStorage() {
+        if (currentFilePath == null) return false;
+        try {
+            File primaryStorage = android.os.Environment.getExternalStorageDirectory();
+            if (primaryStorage == null) return false;
+            String primaryPath = primaryStorage.getAbsolutePath();
+            return !currentFilePath.startsWith(primaryPath);
+        } catch (Exception e) {
+            // 无法判断时保守地认为是内部存储，使用较小缓冲
+            return false;
+        }
+    }
+
     private void initializePlayer() {
         if (currentFilePath == null || fileList.isEmpty()) {
             finish();
@@ -659,13 +678,18 @@ public class PlayerActivity extends AppCompatActivity {
         // 在 SDR 屏幕上强制启用 OpenGL HDR→SDR tone mapping，解决 HDR 视频发灰问题。
         ToneMappingRenderersFactory renderersFactory = new ToneMappingRenderersFactory(this);
 
-        // ── LoadControl：适度缓冲，平衡流畅度与内存 ─────────────────────────
-        // maxBufferMs 50s 对高码率本地视频（4K ~50MB/s）会消耗数百MB，直接OOM。
-        // 本地文件无网络延迟，8s 缓冲已足够流畅，大幅降低内存占用。
+        // ── LoadControl：按存储介质分级设置缓冲，平衡流畅度与内存 ─────────────────
+        // 内部存储（/storage/emulated/0）读取稳定，用小缓冲即可流畅，避免高码率
+        // 4K 视频占用过多内存；USB/SD 卡等可移动存储读取速度不稳定（尤其 USB2.0
+        // 设备/劣质 SD 卡），缓冲太小遇到读盘抖动会更容易触发 rebuffer（卡顿转圈），
+        // 因此对可移动存储适当放大缓冲区间以提升抗抖动能力。
+        boolean isRemovableSource = isCurrentSourceRemovableStorage();
+        int minBufferMs = isRemovableSource ? 15_000 : 5_000;
+        int maxBufferMs = isRemovableSource ? 30_000 : 8_000;
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs      */ 5_000,    // 最小缓冲 5s
-                /* maxBufferMs      */ 8_000,    // 最大缓冲 8s（本地文件无需大缓冲）
+                /* minBufferMs      */ minBufferMs,
+                /* maxBufferMs      */ maxBufferMs,
                 /* bufferForPlaybackMs              */ 1_500,  // 首帧等待 1.5s
                 /* bufferForPlaybackAfterRebufferMs */ 3_000   // 卡顿后恢复 3s
             )
@@ -716,12 +740,22 @@ public class PlayerActivity extends AppCompatActivity {
         // 先绑定 PlayerView，再 prepare，确保 Surface 在解码前已就绪，避免首帧黑屏
         playerView.setPlayer(player);
 
-        // 将所有视频文件转换为 MediaItem 列表（后台线程异步构建，避免主线程 IO）
+        // ── 构建播放列表：只对"当前要播放"的这一项做同步字幕扫描，其余项先用轻量
+        // MediaItem（无磁盘 IO）占位，prepare() 后在后台线程异步补齐字幕，再通过
+        // replaceMediaItem 无缝替换。避免播放列表很大时，主线程被逐个 listFiles()
+        // 同步扫描字幕阻塞，导致打开播放器卡顿。
         List<MediaItem> mediaItems = new ArrayList<>();
-        for (String filePath : fileList) {
-            File file = new File(filePath);
-            if (file.exists()) {
+        List<Integer> pendingSubtitleIndices = new ArrayList<>();
+        for (int i = 0; i < fileList.size(); i++) {
+            File file = new File(fileList.get(i));
+            if (!file.exists()) continue;
+            if (i == currentIndex) {
+                // 当前播放项立即需要字幕，同步构建（仅 1 次 IO，可接受）
                 mediaItems.add(SubtitleAutoLoader.buildItem(file));
+            } else {
+                // 其余项先占位，不做字幕扫描
+                mediaItems.add(MediaItem.fromUri(Uri.fromFile(file)));
+                pendingSubtitleIndices.add(mediaItems.size() - 1);
             }
         }
 
@@ -734,6 +768,28 @@ public class PlayerActivity extends AppCompatActivity {
         // 从当前索引开始播放；seekToDefaultPosition 由 savedPosition 逻辑覆盖
         player.setMediaItems(mediaItems, currentIndex, /* startPositionMs= */ 0);
         player.prepare();
+
+        // 后台异步补齐其余视频的字幕配置，逐个 replaceMediaItem 更新（不影响当前播放）
+        if (!pendingSubtitleIndices.isEmpty()) {
+            List<String> filesSnapshot = new ArrayList<>(fileList);
+            subtitleScanExecutor.execute(() -> {
+                for (int idx : pendingSubtitleIndices) {
+                    if (idx >= filesSnapshot.size()) continue;
+                    File file = new File(filesSnapshot.get(idx));
+                    if (!file.exists()) continue;
+                    MediaItem itemWithSubs = SubtitleAutoLoader.buildItem(file);
+                    runOnUiThread(() -> {
+                        if (player != null && idx < player.getMediaItemCount()) {
+                            try {
+                                player.replaceMediaItem(idx, itemWithSubs);
+                            } catch (Exception e) {
+                                android.util.Log.w(TAG, "replaceMediaItem for subtitle failed: " + e.getMessage());
+                            }
+                        }
+                    });
+                }
+            });
+        }
         
         // 恢复播放位置（如果有历史记录）—— 必须在 prepare() 之后、play() 之前 seekTo
         long savedPosition = playHistoryManager.getPlayPosition(currentFilePath);
@@ -890,24 +946,27 @@ public class PlayerActivity extends AppCompatActivity {
         
         // 提取新增的视频
         List<String> newVideos = newVideoList.subList(fileList.size(), newVideoList.size());
-        
-        // 将新视频转换为 MediaItem
-        List<MediaItem> newMediaItems = new ArrayList<>();
-        for (String filePath : newVideos) {
-            java.io.File file = new java.io.File(filePath);
-            if (file.exists()) {
-                newMediaItems.add(SubtitleAutoLoader.buildItem(file));
+        // 先占位加入 fileList，保证 currentIndex / checkAndRequestMoreVideos 等逻辑一致
+        fileList.addAll(newVideos);
+
+        // 后台线程异步扫描字幕并构建 MediaItem，避免在主线程做同步 IO（可能有多个新视频）
+        subtitleScanExecutor.execute(() -> {
+            List<MediaItem> newMediaItems = new ArrayList<>();
+            for (String filePath : newVideos) {
+                File file = new File(filePath);
+                if (file.exists()) {
+                    newMediaItems.add(SubtitleAutoLoader.buildItem(file));
+                }
             }
-        }
-        
-        if (!newMediaItems.isEmpty()) {
-            // 添加到播放列表
-            player.addMediaItems(newMediaItems);
-            fileList.addAll(newVideos);
-            
-            android.util.Log.d(TAG, "成功添加 " + newMediaItems.size() + " 个新视频到播放列表");
-            Toast.makeText(this, "已加载 " + newMediaItems.size() + " 个新视频", Toast.LENGTH_SHORT).show();
-        }
+            if (!newMediaItems.isEmpty()) {
+                runOnUiThread(() -> {
+                    if (player == null) return;
+                    player.addMediaItems(newMediaItems);
+                    android.util.Log.d(TAG, "成功添加 " + newMediaItems.size() + " 个新视频到播放列表");
+                    Toast.makeText(this, "已加载 " + newMediaItems.size() + " 个新视频", Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
     }
 
     private void playNext() {
@@ -1091,6 +1150,9 @@ public class PlayerActivity extends AppCompatActivity {
             try { boundService.detachPlayer(); } catch (Exception ignored) {}
         }
         stopService(new Intent(this, PlaybackService.class));
+
+        // 关闭字幕异步扫描线程池，避免 Activity 销毁后残留任务继续引用 Activity
+        subtitleScanExecutor.shutdownNow();
 
         // 释放播放器资源
         releasePlayer();
