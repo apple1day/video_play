@@ -9,7 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
@@ -22,6 +24,7 @@ import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
 
 import java.io.File;
+import java.lang.ref.WeakReference;
 
 /**
  * 后台播放 + 媒体通知服务。
@@ -45,20 +48,24 @@ public class PlaybackService extends Service {
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_FILE_PATH = "file_path";
 
-    private MediaSessionCompat mediaSession;
+    @Nullable private MediaSessionCompat mediaSession;
     @Nullable private ExoPlayer player;
     @Nullable private String title;
     @Nullable private String filePath;
     @Nullable private Player.Listener playerListener;
-    // 异步封面加载（避免在主线程做 IO）
-    private static final java.util.concurrent.ExecutorService coverExecutor =
+    private final LocalBinder binder = new LocalBinder(this);
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    // 异步封面加载（避免在主线程做 IO），随 Service 生命周期创建和销毁，避免静态线程持有旧 Service。
+    private final java.util.concurrent.ExecutorService coverExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private volatile boolean destroyed = false;
     @Nullable private Bitmap lastCover;
     @Nullable private String lastCoverPath;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        destroyed = false;
         createChannel();
         mediaSession = new MediaSessionCompat(this, "AnxiongPlayback");
         mediaSession.setCallback(new MediaSessionCompat.Callback() {
@@ -78,6 +85,7 @@ public class PlaybackService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (mediaSession == null) return START_NOT_STICKY;
         // 处理来自通知栏按钮的 MediaButton 事件
         MediaButtonReceiver.handleIntent(mediaSession, intent);
 
@@ -135,6 +143,7 @@ public class PlaybackService extends Service {
     }
 
     private void pushNotification() {
+        if (destroyed || mediaSession == null || coverExecutor.isShutdown()) return;
         boolean isPlaying = player != null && player.isPlaying();
         long position = player != null ? player.getCurrentPosition() : 0L;
         long duration = player != null ? Math.max(0L, player.getDuration()) : 0L;
@@ -160,10 +169,12 @@ public class PlaybackService extends Service {
         final String currentPath = filePath;
         if (currentPath != null && !currentPath.equals(lastCoverPath)) {
             coverExecutor.execute(() -> {
+                if (destroyed || Thread.currentThread().isInterrupted()) return;
                 Bitmap bmp = null;
                 try { bmp = ThumbnailLoader.extractThumbnail(currentPath); } catch (Exception ignored) {}
                 final Bitmap finalBmp = bmp;
-                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                mainHandler.post(() -> {
+                    if (destroyed || !currentPath.equals(filePath)) return;
                     lastCover = finalBmp;
                     lastCoverPath = currentPath;
                     pushNotificationWithCover(displayTitle, finalBmp);
@@ -175,6 +186,7 @@ public class PlaybackService extends Service {
     }
 
     private void pushNotificationWithCover(String displayTitle, Bitmap cover) {
+        if (destroyed || mediaSession == null) return;
         boolean isPlaying = player != null && player.isPlaying();
         long position = player != null ? player.getCurrentPosition() : 0L;
         long duration = player != null ? Math.max(0L, player.getDuration()) : 0L;
@@ -263,36 +275,56 @@ public class PlaybackService extends Service {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
+        mainHandler.removeCallbacksAndMessages(null);
+        coverExecutor.shutdownNow();
         detachPlayer();
+        binder.clear();
+        lastCover = null;
+        lastCoverPath = null;
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();
+            mediaSession = null;
         }
         super.onDestroy();
     }
 
-    @Nullable @Override public IBinder onBind(Intent intent) { return new LocalBinder(); }
+    @Nullable @Override public IBinder onBind(Intent intent) { return binder; }
 
     /**
-     * 内部 Binder：通过方法把 service 实例暴露出去，
-     * 比直接暴露 `public final PlaybackService service` 字段更安全，
-     * 也能规避同名包路径下 IDE 报 "Cannot access ..." 的解析问题。
+     * Binder 可能被 framework/native 临时持有；必须避免非静态内部类隐式强引用 Service。
      */
-    public class LocalBinder extends android.os.Binder {
+    public static final class LocalBinder extends android.os.Binder {
+        private WeakReference<PlaybackService> serviceRef;
+
+        LocalBinder(PlaybackService service) {
+            serviceRef = new WeakReference<>(service);
+        }
+
+        @Nullable
         public PlaybackService getService() {
-            return PlaybackService.this;
+            return serviceRef != null ? serviceRef.get() : null;
+        }
+
+        void clear() {
+            if (serviceRef != null) {
+                serviceRef.clear();
+                serviceRef = null;
+            }
         }
     }
 
     /** 让外部静态触发通知刷新的便捷方法。 */
     public static void requestUpdate(Context ctx, @Nullable String title, @Nullable String filePath) {
-        Intent i = new Intent(ctx, PlaybackService.class).setAction(ACTION_UPDATE);
+        Context appCtx = ctx.getApplicationContext();
+        Intent i = new Intent(appCtx, PlaybackService.class).setAction(ACTION_UPDATE);
         if (title != null) i.putExtra(EXTRA_TITLE, title);
         if (filePath != null) i.putExtra(EXTRA_FILE_PATH, filePath);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ctx.startForegroundService(i);
+            appCtx.startForegroundService(i);
         } else {
-            ctx.startService(i);
+            appCtx.startService(i);
         }
     }
 }

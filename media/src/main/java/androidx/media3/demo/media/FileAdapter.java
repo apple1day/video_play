@@ -15,6 +15,7 @@ import androidx.collection.LruCache;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -340,6 +341,17 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
         return files.size();
     }
 
+    @Override
+    public void onViewRecycled(@NonNull ViewHolder holder) {
+        super.onViewRecycled(holder);
+        Context ctx = context != null ? context : holder.itemView.getContext();
+        ThumbnailLoader.clearThumbnail(ctx, holder.icon);
+        holder.icon.setImageDrawable(null);
+        if (holder.durationBadge != null) {
+            holder.durationBadge.setTag(null);
+        }
+    }
+
     class ViewHolder extends RecyclerView.ViewHolder {
         private ImageView icon;
         private TextView fileName;
@@ -529,8 +541,8 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
             // 未探测：先隐藏，异步取
             durationBadge.setVisibility(View.GONE);
             final String path = item.getFile().getAbsolutePath();
-            final TextView target = durationBadge;
-            target.setTag(path);
+            durationBadge.setTag(path);
+            final WeakReference<TextView> targetRef = new WeakReference<>(durationBadge);
             durationExecutor.execute(() -> {
                 long d = 0L;
                 try {
@@ -539,8 +551,9 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.ViewHolder> {
                 final long finalDuration = d;
                 item.setDurationMs(finalDuration > 0 ? finalDuration : 0);
                 mainHandler.post(() -> {
-                    // 防止 ViewHolder 复用错位
-                    if (path.equals(target.getTag()) && finalDuration > 0) {
+                    TextView target = targetRef.get();
+                    // 防止 ViewHolder 复用错位，也避免后台任务强持有已销毁页面的 View。
+                    if (target != null && path.equals(target.getTag()) && finalDuration > 0) {
                         target.setText(FileItem.formatDuration(finalDuration));
                         target.setVisibility(View.VISIBLE);
                     }

@@ -3,13 +3,18 @@ package androidx.media3.demo.media;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.media.MediaMetadataRetriever;
+import android.os.Build;
 import android.util.Log;
 import android.util.LruCache;
 import android.widget.ImageView;
 
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.RequestOptions;
+import com.bumptech.glide.request.target.Target;
 import com.bumptech.glide.signature.ObjectKey;
 
 import java.io.File;
@@ -26,13 +31,15 @@ import java.io.File;
 public class ThumbnailLoader {
 
     private static final String TAG = "ThumbnailLoader";
+    private static final int THUMBNAIL_SIZE = 200;
+    private static final int NOTIFICATION_COVER_MAX_SIZE = 320;
 
     // ── L1 内存 LRU ──────────────────────────────────────────────
     private static final LruCache<String, Bitmap> memCache;
     static {
-        // 用可用堆的 1/8 做缓存，但最多不超过 50MB
+        // Glide 已有内存/磁盘缓存，这里只保留小型热缓存，避免列表和通知封面占用过多 Bitmap native 内存。
         final int maxMem = (int) (Runtime.getRuntime().maxMemory() / 1024); // KB
-        final int cacheSize = Math.min(maxMem / 8, 50 * 1024);             // KB
+        final int cacheSize = Math.min(Math.max(maxMem / 16, 4 * 1024), 12 * 1024); // KB
         memCache = new LruCache<String, Bitmap>(cacheSize) {
             @Override
             protected int sizeOf(String key, Bitmap value) {
@@ -72,24 +79,32 @@ public class ThumbnailLoader {
                 .placeholder(android.R.drawable.ic_menu_gallery)
                 .error(android.R.drawable.ic_menu_gallery)
                 .signature(new ObjectKey(key))
-                .override(200, 200);
+                .override(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
 
         Glide.with(context)
                 .asBitmap()
                 .load(videoFile)
                 .apply(options)
-                .into(new com.bumptech.glide.request.target.CustomTarget<Bitmap>() {
+                .listener(new RequestListener<Bitmap>() {
                     @Override
-                    public void onResourceReady(@androidx.annotation.NonNull Bitmap resource,
-                                                @androidx.annotation.Nullable com.bumptech.glide.request.transition.Transition<? super Bitmap> transition) {
+                    public boolean onLoadFailed(@androidx.annotation.Nullable GlideException e,
+                                                Object model,
+                                                Target<Bitmap> target,
+                                                boolean isFirstResource) {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean onResourceReady(Bitmap resource,
+                                                   Object model,
+                                                   Target<Bitmap> target,
+                                                   DataSource dataSource,
+                                                   boolean isFirstResource) {
                         memCache.put(key, resource);
-                        imageView.setImageBitmap(resource);
+                        return false;
                     }
-                    @Override
-                    public void onLoadCleared(@androidx.annotation.Nullable android.graphics.drawable.Drawable placeholder) {
-                        // 资源被释放时不做处理（ImageView已持有Bitmap引用）
-                    }
-                });
+                })
+                .into(imageView);
     }
 
     /**
@@ -97,7 +112,12 @@ public class ThumbnailLoader {
      */
     public static void clearThumbnail(Context context, ImageView imageView) {
         if (context != null && imageView != null) {
-            Glide.with(context).clear(imageView);
+            try {
+                Glide.with(context).clear(imageView);
+            } catch (IllegalArgumentException ignored) {
+                // Activity 已销毁时 Glide.with(activity) 可能拒绝清理；直接清空 ImageView 引用兜底。
+                imageView.setImageDrawable(null);
+            }
         }
     }
 
@@ -120,9 +140,9 @@ public class ThumbnailLoader {
                 if (ds != null) durationMs = Long.parseLong(ds);
             } catch (Exception ignored) {}
             long targetUs = durationMs > 4000 ? (durationMs / 2) * 1000L : 1_000_000L;
-            Bitmap bmp = retriever.getFrameAtTime(targetUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-            if (bmp == null) bmp = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-            if (bmp != null) memCache.put(key, bmp); // 写入 L1
+            Bitmap bmp = getScaledVideoFrame(retriever, targetUs, NOTIFICATION_COVER_MAX_SIZE);
+            if (bmp == null) bmp = getScaledVideoFrame(retriever, 1_000_000L, NOTIFICATION_COVER_MAX_SIZE);
+            if (bmp != null) memCache.put(key, bmp); // 写入 L1，只缓存小尺寸封面
             return bmp;
         } catch (Exception e) {
             Log.e(TAG, "Failed to extract thumbnail: " + videoPath, e);
@@ -132,6 +152,45 @@ public class ThumbnailLoader {
                 try { retriever.release(); } catch (Exception ignored) {}
             }
         }
+    }
+
+    private static Bitmap getScaledVideoFrame(MediaMetadataRetriever retriever, long timeUs, int maxSize) {
+        try {
+            int[] size = readScaledVideoSize(retriever, maxSize);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && size[0] > 0 && size[1] > 0) {
+                return retriever.getScaledFrameAtTime(timeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC, size[0], size[1]);
+            }
+        } catch (Throwable ignored) {}
+
+        Bitmap original = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+        return scaleDown(original, maxSize);
+    }
+
+    private static int[] readScaledVideoSize(MediaMetadataRetriever retriever, int maxSize) {
+        int width = parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
+        int height = parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+        if (width <= 0 || height <= 0) return new int[] { maxSize, maxSize };
+        float scale = Math.min(1f, maxSize / (float) Math.max(width, height));
+        return new int[] { Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)) };
+    }
+
+    private static int parseInt(String value) {
+        try { return value != null ? Integer.parseInt(value) : 0; } catch (Exception ignored) { return 0; }
+    }
+
+    private static Bitmap scaleDown(Bitmap original, int maxSize) {
+        if (original == null) return null;
+        int width = original.getWidth();
+        int height = original.getHeight();
+        int maxEdge = Math.max(width, height);
+        if (maxEdge <= maxSize) return original;
+        float scale = maxSize / (float) maxEdge;
+        Bitmap scaled = Bitmap.createScaledBitmap(original,
+                Math.max(1, Math.round(width * scale)),
+                Math.max(1, Math.round(height * scale)), true);
+        if (scaled != original) original.recycle();
+        return scaled;
     }
 
     /**

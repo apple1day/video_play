@@ -93,6 +93,9 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean isLongPressing = false;
     private float longPressOriginalSpeed = 1.0f;
     private final android.os.Handler longPressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable hideSeekOverlayRunnable = () -> {
+        if (seekOverlay != null) seekOverlay.setVisibility(View.GONE);
+    };
     private static final long LONG_PRESS_TRIGGER_MS = 500; // 触发长按的阈值
 
     // 画质增强预设
@@ -108,22 +111,33 @@ public class PlayerActivity extends AppCompatActivity {
     // 避免在主线程对整个播放列表做同步 IO 扫描，导致打开播放器时卡顿。
     private final java.util.concurrent.ExecutorService subtitleScanExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable updatePlaylistRunnable = this::updatePlaylistFromHomeFragment;
+    private volatile boolean destroyed = false;
+    private boolean serviceBound = false;
 
     @androidx.annotation.Nullable private PlaybackService boundService;
     private final ServiceConnection serviceConn = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            if (destroyed) return;
             if (service instanceof PlaybackService.LocalBinder) {
-                boundService = ((PlaybackService.LocalBinder) service).getService();
+                PlaybackService playbackService = ((PlaybackService.LocalBinder) service).getService();
+                if (playbackService == null) return;
+                boundService = playbackService;
                 if (player != null) boundService.attachPlayer(player);
                 pushServiceMetadata();
             }
         }
-        @Override public void onServiceDisconnected(ComponentName name) { boundService = null; }
+        @Override public void onServiceDisconnected(ComponentName name) {
+            serviceBound = false;
+            boundService = null;
+        }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        destroyed = false;
         // 启用边到边布局，便于沉浸式
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_player);
@@ -426,7 +440,10 @@ public class PlayerActivity extends AppCompatActivity {
         if (player != null) {
             player.setPlaybackSpeed(longPressOriginalSpeed);
         }
-        if (seekOverlay != null) seekOverlay.setVisibility(View.GONE);
+        if (seekOverlay != null) {
+            seekOverlay.removeCallbacks(hideSeekOverlayRunnable);
+            seekOverlay.setVisibility(View.GONE);
+        }
     }
     
     // 调节音量
@@ -493,12 +510,8 @@ public class PlayerActivity extends AppCompatActivity {
             seekOverlay.setVisibility(View.VISIBLE);
             
             // 1.5秒后自动隐藏
-            seekOverlay.removeCallbacks(null);
-            seekOverlay.postDelayed(() -> {
-                if (seekOverlay != null) {
-                    seekOverlay.setVisibility(View.GONE);
-                }
-            }, 1500);
+            seekOverlay.removeCallbacks(hideSeekOverlayRunnable);
+            seekOverlay.postDelayed(hideSeekOverlayRunnable, 1500);
         }
     }
 
@@ -774,17 +787,17 @@ public class PlayerActivity extends AppCompatActivity {
             List<String> filesSnapshot = new ArrayList<>(fileList);
             subtitleScanExecutor.execute(() -> {
                 for (int idx : pendingSubtitleIndices) {
+                    if (destroyed || Thread.currentThread().isInterrupted()) return;
                     if (idx >= filesSnapshot.size()) continue;
                     File file = new File(filesSnapshot.get(idx));
                     if (!file.exists()) continue;
                     MediaItem itemWithSubs = SubtitleAutoLoader.buildItem(file);
-                    runOnUiThread(() -> {
-                        if (player != null && idx < player.getMediaItemCount()) {
-                            try {
-                                player.replaceMediaItem(idx, itemWithSubs);
-                            } catch (Exception e) {
-                                android.util.Log.w(TAG, "replaceMediaItem for subtitle failed: " + e.getMessage());
-                            }
+                    mainHandler.post(() -> {
+                        if (destroyed || player == null || idx >= player.getMediaItemCount()) return;
+                        try {
+                            player.replaceMediaItem(idx, itemWithSubs);
+                        } catch (Exception e) {
+                            android.util.Log.w(TAG, "replaceMediaItem for subtitle failed: " + e.getMessage());
                         }
                     });
                 }
@@ -920,10 +933,9 @@ public class PlayerActivity extends AppCompatActivity {
             // 请求加载更多
             listener.onRequestLoadMore();
             
-            // 延迟500ms后更新播放列表
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                updatePlaylistFromHomeFragment();
-            }, 500);
+            // 延迟500ms后更新播放列表；复用可清理的 Handler，避免销毁后回调持有 Activity。
+            mainHandler.removeCallbacks(updatePlaylistRunnable);
+            mainHandler.postDelayed(updatePlaylistRunnable, 500);
         }
     }
     
@@ -953,17 +965,19 @@ public class PlayerActivity extends AppCompatActivity {
         subtitleScanExecutor.execute(() -> {
             List<MediaItem> newMediaItems = new ArrayList<>();
             for (String filePath : newVideos) {
+                if (destroyed || Thread.currentThread().isInterrupted()) return;
                 File file = new File(filePath);
                 if (file.exists()) {
                     newMediaItems.add(SubtitleAutoLoader.buildItem(file));
                 }
             }
             if (!newMediaItems.isEmpty()) {
-                runOnUiThread(() -> {
-                    if (player == null) return;
+                Context appCtx = getApplicationContext();
+                mainHandler.post(() -> {
+                    if (destroyed || player == null) return;
                     player.addMediaItems(newMediaItems);
                     android.util.Log.d(TAG, "成功添加 " + newMediaItems.size() + " 个新视频到播放列表");
-                    Toast.makeText(this, "已加载 " + newMediaItems.size() + " 个新视频", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(appCtx, "已加载 " + newMediaItems.size() + " 个新视频", Toast.LENGTH_SHORT).show();
                 });
             }
         });
@@ -997,7 +1011,7 @@ public class PlayerActivity extends AppCompatActivity {
         } else {
             startService(svc);
         }
-        bindService(new Intent(this, PlaybackService.class), serviceConn, Context.BIND_AUTO_CREATE);
+        serviceBound = bindService(new Intent(this, PlaybackService.class), serviceConn, Context.BIND_AUTO_CREATE);
     }
 
     @Override
@@ -1031,7 +1045,11 @@ public class PlayerActivity extends AppCompatActivity {
         // 在 onStop 就保存进度，保证 Activity 被系统杀死时也能续播
         saveCurrentProgress();
         // 解绑服务；若播放器已暂停则停止前台
-        try { unbindService(serviceConn); } catch (Exception ignored) {}
+        if (serviceBound) {
+            try { unbindService(serviceConn); } catch (Exception ignored) {}
+            serviceBound = false;
+        }
+        boundService = null;
         if (player != null && !player.isPlaying()) {
             stopService(new Intent(this, PlaybackService.class));
         }
@@ -1140,7 +1158,10 @@ public class PlayerActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        super.onDestroy();
+        destroyed = true;
+        mainHandler.removeCallbacksAndMessages(null);
+        longPressHandler.removeCallbacksAndMessages(null);
+        if (seekOverlay != null) seekOverlay.removeCallbacks(hideSeekOverlayRunnable);
 
         // onStop 已保存进度；onDestroy 再兜底一次（处理极端情况：onStop 未被调用）
         saveCurrentProgress();
@@ -1149,6 +1170,11 @@ public class PlayerActivity extends AppCompatActivity {
         if (boundService != null) {
             try { boundService.detachPlayer(); } catch (Exception ignored) {}
         }
+        if (serviceBound) {
+            try { unbindService(serviceConn); } catch (Exception ignored) {}
+            serviceBound = false;
+        }
+        boundService = null;
         stopService(new Intent(this, PlaybackService.class));
 
         // 关闭字幕异步扫描线程池，避免 Activity 销毁后残留任务继续引用 Activity
@@ -1156,6 +1182,7 @@ public class PlayerActivity extends AppCompatActivity {
 
         // 释放播放器资源
         releasePlayer();
+        super.onDestroy();
     }
     
     private void releasePlayer() {

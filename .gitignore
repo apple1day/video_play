@@ -99,3 +99,4 @@ anxiong
 *.keystore
 *.jks
 keystore.properties
+/docs/logs
